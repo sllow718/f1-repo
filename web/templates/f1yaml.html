@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2>{% block title %} F1 Configuration {% endblock %}</h2>
+    <div class="container">
+      <div class="row">
+        <div class="col-md-6">
+          <button class="btn btn-lg btn-primary" onClick="parent.location='/service'">Back To Service Status</button>
+        </div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-12">
+          f1store.yaml
+        </div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-12">
+        <form action="{{ url_for('f1config_save') }}" method="POST">
+          <div><textarea style="resize:none; display: block; font-family: monospace; white-space: pre; margin: 1em 0;" rows="24" cols="128" name="storetxt">{{ storetxt }}</textarea></div>
+          <button type="button" class="btn btn-md btn-primary" onClick="parent.location='/yaml/load'">Load YAML Config</button>&nbsp;
+          <input type="submit" value="Save YAML Config" class="btn btn-md btn-primary"/>
+        </form>
+        </div>
+      </div>
+    </div>
+{% endblock %}

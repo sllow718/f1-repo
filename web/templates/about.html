@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2>{% block title %} About {% endblock %}</h2>
+    <br />
+    <div>Server IP Address: <span class="txt-gry">{{ ipaddr }}</span></div>
+    <br />
+    <ul>
+        <li><a target="_top" href="/service">Service Status</a></li>
+        <li><a target="_blank" href="http://{{ipaddr}}:15672/#">RabbitMQ Console</a></li>
+        <li><a target="_top" href="/rdm/admin">Remote Device (Access) Admin</a></li>
+        <li><a target="_blank" href="/runningguide">Running Guide</a></li>
+    </ul>
+    <div class="footer">This page is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content%}
+<div class="container">
+    <div class="row">
+        <div class="col-md-6 card">
+            <form action="{{ request.path }}" method="POST" class="card-body">
+                {{ form.csrf_token }}
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                <!-- Categories: success (green), info (blue), warning (yellow), danger (red) -->
+                {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{category}} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+                {% endif %}
+                {% endwith %}
+
+                <div class="text-center">
+                    <h5 class="text-primary">{{ text }}</h5>
+                </div>
+                
+                <div class="form-group">
+                  {{ form.email.label(class_="col-form-label",style="color:#212529") }}
+                  {{ form.email(class_="form-control",placeholder="Email")}}
+                </div>
+                <div class="form-group">
+                  {{ form.pwd.label(class_="col-form-label",style="color:#212529") }}
+                  {{ form.pwd(class_="form-control",placeholder="Password")}}
+                </div>
+                {% for error in form.pwd.errors %}
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                  {{ error }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor%}
+                <div class="form-group">
+                  {{ form.cpwd.label(class_="col-form-label",style="color:#212529") }}
+                  {{ form.cpwd(class_="form-control",placeholder="Confirm Password")}}
+                </div>
+                {% for error in form.cpwd.errors %}
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                  {{ error }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor%}
+                <div class="form-group">
+                  {{ form.client_id.label(class_="col-form-label",style="color:#212529") }}
+                  {{ form.client_id(class_="form-control",placeholder="Client Id")}}
+                </div>
+                <div class="form-group">
+                  {{ form.client_secret_oauth.label(class_="col-form-label",style="color:#212529") }}
+                  {{ form.client_secret_oauth(class_="form-control",placeholder="Client OAuth Secret")}}
+                </div>
+                <div class="form-group">
+                  {{ form.client_secret_b32.label(class_="col-form-label",style="color:#212529") }}
+                  {{ form.client_secret_b32(class_="form-control",placeholder="Client Base32 Secret")}}
+                </div>
+                <div class="d-grid gap-2">&nbsp;</div>
+                <div class="form-group">
+                     <button type="button" class="btn btn-block btn-primary mb-3" onClick="parent.location='/user/cancel'">Cancel</button>&nbsp;
+                     {{ form.submit(class_="btn btn-block btn-primary mb-3") }}
+                     {{ form.rotate(class_="btn btn-block btn-primary mb-3") }}
+                     <!-- <button type="submit" class="btn btn-block btn-primary mb-3"> {{ btn_action }} </button> -->
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

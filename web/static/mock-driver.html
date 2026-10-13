@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Driver Telemetry — Mock</title>
+<style>
+/* F1 webfonts, same files the Flask app uses (web/static/css/). Falls back to
+   system faces if opened over file:// in a browser that blocks local fonts. */
+@font-face{font-family:'Formula1';src:url('css/formula1-bold_web_0-webfont.woff2') format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Formula1';src:url('css/formula1-regular_web_0-webfont.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Titillium';src:url('css/titilliumweb-regular-webfont.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Titillium';src:url('css/titilliumweb-bold-webfont.woff2') format('woff2');font-weight:700;font-display:swap}
+
+/* Palette copied from web/static/css/f1sim.css :root — only the values used here. */
+:root{
+  --carbon:#15151e;
+  --bg:#1b1b1b;
+  --bg-alt:#3f3f3f;
+  --red:#ff1e00;
+  --white:#ffffff;
+  --green:#22ff08;
+  --yellow:#ffff1b;
+  --purple:#f700fa;
+  --cyan:#21ffff;
+  --dim:#8a8a94;
+  --num:'Titillium',system-ui,sans-serif;
+  --disp:'Formula1','Titillium',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--carbon);color:var(--white);font-family:var(--num)}
+/* Full-bleed: spans the viewport and fits its height, so the circuit takes
+   whatever room is left rather than the page scrolling. */
+body{height:100dvh;overflow:auto}
+.dash{width:100%;height:100%;background:var(--bg);display:flex;flex-direction:column}
+
+.panel{padding:14px 18px;border-bottom:1px solid #2a2a33;flex:none;min-width:0}
+
+/* Top half: speedometer. Bottom half split down the middle — circuit left,
+   lap data right. Everything sized off the viewport so the whole dash fits
+   the screen with no scrolling. */
+.head{flex:1;min-height:0}
+.bottom{flex:1;display:flex;min-height:0}
+.bottom > .panel{flex:1;min-height:0;border-bottom:none;display:flex;flex-direction:column}
+.bottom > .panel + .panel{border-left:1px solid #2a2a33}
+
+.lbl{font-family:var(--disp);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+
+/* ---- instrument cluster (top half) ---- */
+/* Modern-car cluster: one centred unit with space around it, rather than a row
+   of widgets spanning the full width. The content is capped and centred so the
+   panel is mostly empty, which is the whole point of the look. Sizes are
+   height-driven so the readout grows into a big screen instead of floating as
+   a strip in the middle of one. */
+.head{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.cluster{width:min(1120px,88%);display:flex;flex-direction:column;gap:clamp(18px,4.5vh,54px)}
+
+/* Speed, unit and gear share one baseline, split by a hairline rule. */
+.readout{display:flex;align-items:baseline;justify-content:center;gap:clamp(12px,1.6vw,28px)}
+/* Both numerals sit in reserved boxes so the row never reflows. The Formula1
+   display face has no `tnum` feature — tabular-nums is silently a no-op for it
+   (measured: 500.4px with and without) — so its digits are all different
+   widths: at the rendered 198px "1" is 125px and "N" is 192px. Left unboxed,
+   the gear changed width by up to 67px as it shifted and dragged everything
+   after it sideways. `ch` is the width of "0" (191.95px at the speed's 240px,
+   70.38px at the gear's 88px), so 3ch exactly covers any three-digit speed —
+   "0" is the widest digit and top speed is 320. For the gear, "N" is the
+   widest glyph at 85.34px, which is 1.213ch, so 1.25ch covers it; the 1.2ch
+   this used to be was measured against the bold face and fell 0.88px short of
+   "N" at the regular weight the cluster now uses, which was enough to shift the
+   centred row by 0.45px. min-width rather than width so an unexpected wider
+   glyph grows the box instead of being clipped. */
+.readout .val{font-family:var(--disp);font-weight:400;   /* face ships 400 and 700 only; 400 is the thin one */
+  font-size:clamp(64px,24vh,240px);line-height:.85;letter-spacing:-.01em;
+  display:inline-block;min-width:3ch;text-align:right}
+.readout .unit{font-family:var(--disp);font-size:clamp(12px,1.7vh,19px);letter-spacing:.18em;
+  text-transform:uppercase;color:var(--dim)}
+.readout .rule{width:1px;align-self:stretch;background:#33333d}
+.readout .gear{font-family:var(--disp);font-weight:400;font-size:clamp(28px,9vh,88px);line-height:.85;
+  display:inline-block;min-width:1.25ch;text-align:left}
+
+/* Three hairline tracks, labels right-aligned against them. RPM is the primary
+   gauge so it is the thicker line; throttle and brake are thinner and coloured,
+   which is the telemetry convention and the only colour in the cluster. No
+   gradients, no glows, no arcs. */
+.gauges{display:flex;flex-direction:column;gap:clamp(9px,1.9vh,20px)}
+.g{display:flex;align-items:center;gap:clamp(12px,1.5vw,24px)}
+.g .lbl{flex:none;width:3.4em;text-align:right}
+.g .track{flex:1;height:2px;background:#2a2a33;border-radius:2px;overflow:hidden}
+.g .track > i{display:block;height:100%;width:0;transition:width .06s linear}
+.g.rpm .track{height:3px}
+#rpmbar{background:var(--white)}
+#rpmbar.hot{background:var(--red)}   /* past the redline */
+#thrbar{background:var(--green)}
+#brkbar{background:var(--red)}
+
+/* ---- lap data ---- */
+/* auto-fit: reads across a wide screen as a stat row, stacks down a narrow
+   one. A single list stretched over 1800px would put label and value half a
+   screen apart; capped at 560px it left two thirds of the panel empty. */
+.times{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px 24px}
+.times .t{font-family:var(--disp);font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.times .t.big{font-size:34px}
+.times .t.sm{font-size:16px}
+.delta{font-size:14px;font-weight:700;margin-left:8px}
+.up{color:var(--green)}   /* faster */
+.down{color:var(--red)}   /* slower */
+.best{color:var(--purple)}
+
+/* ---- circuit map (bottom left) ---- */
+.maphead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+/* Fills its quarter; preserveAspectRatio="meet" fits the shape inside whatever
+   proportions that quarter ends up with. */
+#map{display:block;width:100%;flex:1;min-height:0;background:#131318;border-radius:8px}
+/* stroke-width is NOT set here: a CSS declaration beats a presentation
+   attribute, so putting it here would silently override the value setTrack()
+   derives from the path's bounding box — which is the whole point of deriving
+   it, since the API's path arrives in whatever units it likes. */
+#circuit{fill:none;stroke:#43434f;stroke-linejoin:round;stroke-linecap:round}
+/* Sector overlay. The three paths carry the same `d` as #circuit and are cut
+   into thirds with stroke-dasharray/dashoffset rather than by splitting the
+   path, so the API's geometry is used exactly as delivered and nothing has to
+   parse it. dasharray, dashoffset and stroke-width are all set in setTrack(),
+   where the real path length is known — deliberately not here, because a CSS
+   declaration beats a presentation attribute and would win over those values. */
+#sectors .sec{fill:none;stroke-linecap:butt}
+#sec1{stroke:var(--cyan)}
+#sec2{stroke:var(--yellow)}
+#sec3{stroke:var(--purple)}
+/* The start/finish bar and the S1/S2/S3 labels are sized in setTrack() too, off
+   the same `k` the road uses, so they scale with whatever shape arrives.
+   paint-order puts the halo under the glyph, which is what keeps the labels
+   legible where they sit on top of a coloured sector. */
+#startline{stroke:var(--white);stroke-linecap:butt}
+/* dominant-baseline is safe here; text-anchor deliberately is NOT set, because the
+   start label has to pick its own per track and a CSS declaration would beat the
+   attribute setTrack() writes. Each label sets it explicitly instead — as do the
+   turn numbers, which want the same look but their own size. */
+.seclbl,.turnlbl{font-family:var(--disp);font-weight:700;fill:var(--white);
+  dominant-baseline:middle;paint-order:stroke;stroke:var(--bg);stroke-linejoin:round}
+#car{fill:var(--white);stroke:var(--red);stroke-width:3}
+
+.mockbadge{position:fixed;top:8px;right:10px;font-family:var(--disp);font-size:10px;letter-spacing:.14em;
+  color:var(--yellow);border:1px solid var(--yellow);border-radius:3px;padding:3px 7px;opacity:.85}
+</style>
+</head>
+<body>
+
+<div class="mockbadge">MOCK DATA</div>
+
+<div class="dash">
+
+  <div class="panel head">
+    <div class="cluster">
+
+      <div class="readout">
+        <span class="val" id="spd">0</span>
+        <span class="unit">km/h</span>
+        <span class="rule"></span>
+        <span class="gear" id="gear">N</span>
+      </div>
+
+      <div class="gauges">
+        <div class="g rpm"><span class="lbl">RPM</span>
+          <span class="track"><i id="rpmbar"></i></span></div>
+        <div class="g thr"><span class="lbl">THR</span>
+          <span class="track"><i id="thrbar"></i></span></div>
+        <div class="g brk"><span class="lbl">BRK</span>
+          <span class="track"><i id="brkbar"></i></span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="bottom">
+
+    <div class="panel map">
+      <div class="maphead">
+        <div class="lbl">Circuit &mdash; <span id="trackname">Marina Bay</span></div>
+        <div class="lbl"><span id="dist">0</span> m</div>
+      </div>
+      <svg id="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+        <path id="circuit" d=""/>
+        <g id="sectors">
+          <path class="sec" id="sec1"/>
+          <path class="sec" id="sec2"/>
+          <path class="sec" id="sec3"/>
+        </g>
+        <line id="startline" x1="0" y1="0" x2="0" y2="0"/>
+        <g id="turnlabels"></g>
+        <g id="maplabels">
+          <text class="seclbl" id="sec1lbl">S1</text>
+          <text class="seclbl" id="sec2lbl">S2</text>
+          <text class="seclbl" id="sec3lbl">S3</text>
+          <text class="seclbl" id="startlbl">START</text>
+        </g>
+        <circle id="car" cx="0" cy="0" r="18"/>
+      </svg>
+    </div>
+
+    <div class="panel">
+      <div class="times">
+        <div><div class="lbl">Lap</div><div class="t" id="lapnum">1</div></div>
+        <div><div class="lbl">Current</div><div class="t big" id="tCur">0:00.000</div></div>
+        <div><div class="lbl">Last</div>
+          <div><span class="t" id="tLast">--:--.---</span><span class="delta" id="dLast"></span></div></div>
+        <div><div class="lbl">Best</div><div class="t best" id="tBest">--:--.---</div></div>
+        <div><div class="lbl">S1 / S2 / S3</div><div class="t sm" id="tSec">- / - / -</div></div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ * Marina Bay (Singapore) — the configured hometrack.
+ * Corner apex: d = metres around the lap, v = apex speed km/h,
+ * s = sharpness 1..3, dir = +1 right / -1 left.
+ * ------------------------------------------------------------------ */
+const LAP_LEN = 4940;
+const CORNERS = [
+  { d:  150, v:  95, s:3, dir: 1 },   // T1  heavy braking
+  { d:  275, v: 132, s:2, dir: 1 },   // T2
+  { d:  400, v: 110, s:2, dir:-1 },   // T3
+  { d:  575, v: 148, s:2, dir: 1 },   // T4
+  { d:  720, v: 122, s:2, dir:-1 },   // T5
+  { d:  890, v: 205, s:1, dir: 1 },   // T6  fast
+  { d: 1055, v: 104, s:3, dir:-1 },   // T7
+  { d: 1195, v: 152, s:2, dir: 1 },   // T8
+  { d: 1360, v:  92, s:3, dir: 1 },   // T9
+  { d: 1570, v: 128, s:2, dir:-1 },   // T10
+  { d: 1760, v: 101, s:3, dir: 1 },   // T11
+  { d: 1990, v: 162, s:2, dir:-1 },   // T12
+  { d: 2215, v:  86, s:3, dir: 1 },   // T13 hairpin
+  { d: 2460, v: 142, s:2, dir:-1 },   // T14
+  { d: 2690, v: 116, s:2, dir: 1 },   // T15
+  { d: 2910, v: 178, s:1, dir:-1 },   // T16
+  { d: 3160, v:  96, s:3, dir: 1 },   // T17
+  { d: 3410, v: 156, s:2, dir:-1 },   // T18
+  { d: 3705, v: 131, s:2, dir: 1 },   // T19  -> long run to the line
+];
+
+const DS      = 5;              // profile resolution, metres
+const N       = Math.round(LAP_LEN / DS);
+const V_MAX   = 320 / 3.6;      // m/s
+const A_BRAKE = 32;             // m/s^2
+const A_ACCEL = 11;             // m/s^2
+const GEARS   = [0, 60, 95, 130, 170, 210, 250, 285];   // lower bound km/h per gear
+
+/* Acceleration is not constant in reality — it is traction-limited at low
+   speed and power/drag-limited at high speed, so it tails off to nothing as
+   the car approaches V_MAX. Without this the car would sit pinned at V_MAX
+   for the whole main straight with the throttle reading zero. */
+const accelLimit = v => A_ACCEL * Math.max(0, 1 - (v / V_MAX) ** 2);
+
+/* ------------------------------------------------------------------ *
+ * Lap profile — solved once at load.
+ * Start everything at V_MAX, clamp the apexes, then relax backwards for
+ * braking and forwards for traction. Two passes so the wrap-around
+ * (last corner -> start/finish straight) converges.
+ * Every displayed value is a consequence of this one array, which is
+ * why the numbers can never contradict each other.
+ * ------------------------------------------------------------------ */
+function buildProfile() {
+  const v = new Float64Array(N).fill(V_MAX);
+
+  for (const c of CORNERS) {
+    const apex = c.v / 3.6;
+    const i = Math.round(c.d / DS) % N;
+    for (let k = -3; k <= 3; k++) {            // small plateau, not a spike
+      const j = (i + k + N) % N;
+      v[j] = Math.min(v[j], apex + Math.abs(k) * 1.2);
+    }
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = N - 1; i >= 0; i--) {         // braking: backwards from each apex
+      const nx = v[(i + 1) % N];
+      v[i] = Math.min(v[i], Math.sqrt(nx * nx + 2 * A_BRAKE * DS));
+    }
+    for (let i = 0; i < N; i++) {              // traction: forwards out of each apex
+      const pv = v[(i - 1 + N) % N];
+      v[i] = Math.min(v[i], Math.sqrt(pv * pv + 2 * accelLimit(pv) * DS));
+    }
+  }
+  return v;
+}
+
+/* Steering is drawn from corner proximity rather than derived from the
+   speed profile — cheap, and it puts the wheel input in the right place. */
+function buildSteer() {
+  const s = new Float64Array(N);
+  const sigma = 70;
+  for (const c of CORNERS) {
+    const ci = c.d / DS;
+    for (let i = 0; i < N; i++) {
+      let dd = (i - ci) * DS;
+      if (dd >  LAP_LEN / 2) dd -= LAP_LEN;
+      if (dd < -LAP_LEN / 2) dd += LAP_LEN;
+      s[i] += c.dir * (c.s / 3) * Math.exp(-(dd * dd) / (2 * sigma * sigma));
+    }
+  }
+  for (let i = 0; i < N; i++) s[i] = Math.max(-1, Math.min(1, s[i]));
+  return s;
+}
+
+const V = buildProfile();
+const STEER = buildSteer();
+
+/* Lap time the profile implies. ~1:33 at Singapore, which is about right. */
+const LAP_TIME_MS = Math.round(V.reduce((a, v, i) => a + DS / v, 0) * 1000);
+
+/* ------------------------------------------------------------------ */
+const idx      = d => Math.floor(((d % LAP_LEN) + LAP_LEN) % LAP_LEN / DS);
+const lerp     = (a, b, t) => a + (b - a) * t;
+function speedAt(d) {                     // m/s, linearly interpolated
+  const x = ((d % LAP_LEN) + LAP_LEN) % LAP_LEN / DS;
+  const i = Math.floor(x), t = x - i;
+  return lerp(V[i % N], V[(i + 1) % N], t);
+}
+function accelAt(d) {                     // m/s^2, from the profile itself
+  const a = speedAt(d), b = speedAt(d + DS);
+  return (b * b - a * a) / (2 * DS);
+}
+
+const fmt = ms => {
+  if (ms == null) return '--:--.---';
+  const m = Math.floor(ms / 60000), s = Math.floor(ms % 60000 / 1000), r = Math.floor(ms % 1000);
+  return m + ':' + String(s).padStart(2, '0') + '.' + String(r).padStart(3, '0');
+};
+const fmtSec = ms => ms == null ? '-' : (ms / 1000).toFixed(3);
+
+/* ---- state ---- */
+let dist = 0, lapMs = 0, lapNum = 1;
+let lastLap = null, bestLap = null, prevSec = [null, null, null], sec = [null, null, null];
+
+function reset() {
+  dist = 0; lapMs = 0; lapNum = 1;
+  lastLap = bestLap = null; prevSec = [null, null, null]; sec = [null, null, null];
+}
+
+function completeLap() {
+  lastLap = lapMs;
+  if (bestLap == null || lastLap < bestLap) bestLap = lastLap;
+  prevSec = sec.slice();
+  sec = [null, null, null];
+  lapNum++; lapMs = 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Every value the dashboard shows, derived from position alone.
+ * Kept as one function so the self-check asserts on exactly what the
+ * screen renders rather than a re-implementation of it.
+ * ------------------------------------------------------------------ */
+function sample(d) {
+  const v   = speedAt(d);
+  const a   = accelAt(d);
+  const st  = STEER[idx(d)];
+  const spd = v * 3.6;
+
+  // Throttle is the pedal, not the net force. Once the car is drag-limited
+  // (accelLimit -> 0) the driver still holds it pinned, so scale by the
+  // limit rather than by the constant.
+  const aLim     = accelLimit(v);
+  const brake    = a < -0.2 ? Math.min(1, -a / A_BRAKE) : 0;
+  const throttle = brake > 0 ? 0
+                 : aLim < 0.5 ? 1
+                 : Math.max(0, Math.min(1, a / aLim));
+
+  // gear + rpm from speed
+  let g = 1;
+  for (let i = 0; i < GEARS.length; i++) if (spd >= GEARS[i]) g = i + 1;
+  const lo = GEARS[g - 1], hi = g < 8 ? GEARS[g] : 330;
+  const frac = Math.max(0, Math.min(1, (spd - lo) / (hi - lo)));
+  const rpm  = 9000 + 6000 * frac;
+
+  // Lateral g from cornering. Nothing on screen shows it any more, but the
+  // self-check asserts it stays physical, so the steering model is still
+  // covered. a/9.81 (longitudinal) had no reader left and was dropped.
+  const latG = st * (v / V_MAX) ** 2 * 4.6;
+
+  return { v, a, spd, g, rpm, throttle, brake, st, latG };
+}
+
+/* ---- one physics tick ---- */
+function step(dt) {
+  const prev = dist;
+  const v = speedAt(dist);
+
+  dist += v * dt;
+  lapMs += dt * 1000;
+  if (dist >= LAP_LEN) { completeLap(); dist -= LAP_LEN; }
+
+  // sector splits, at the 1/3 and 2/3 marks
+  const marks = [LAP_LEN / 3, 2 * LAP_LEN / 3];
+  for (let i = 0; i < 2; i++) {
+    if (sec[i] == null && prev < marks[i] && dist >= marks[i]) {
+      sec[i] = i === 0 ? lapMs : lapMs - sec[0];
+    }
+  }
+
+  return sample(dist);
+}
+
+/* ---- render ---- */
+const $ = id => document.getElementById(id);
+
+/* ------------------------------------------------------------------ *
+ * Circuit map — where the car is on the lap.
+ *
+ * The real dashboard (js/telemetrySVG.js) places its car straight from the
+ * packet's world coordinates: rot(m_worldPosX, m_worldPosY), because its
+ * path and the world position share a coordinate space. This mock has no
+ * world coordinates, so the dot is placed by ARC LENGTH instead —
+ * getPointAtLength() walks the path for us, and the fraction walked is
+ * dist/LAP_LEN. The dot and the speed readout therefore both come from
+ * `dist` and cannot drift apart.
+ *
+ * Same trackmap endpoint js/trackmap_svg.js calls. If the fetch fails
+ * (offline Pi) the inline path below is kept, so the panel never renders
+ * empty; both routes share every line of positioning code.
+ * ------------------------------------------------------------------ */
+const TRACK_API = 'https://apigw.withoracle.cloud/livelaps/trackmap/Singapore/2022';
+const TRACK_NAME = 'Singapore';
+
+/* The real Marina Bay shape, baked in. This began as a hand-drawn stand-in and
+   every refresh showed that sketch for a second or more while TRACK_API answered
+   over the internet, so the page always opened on the wrong circuit and then
+   jumped. It is now the exact string the API serves for Singapore/2022, so the
+   swap on arrival is a byte-for-byte no-op and nothing moves. It also means the
+   offline Pi case draws the true track rather than an approximation whose
+   corners did not line up with CORNERS above.
+   To regenerate: fetch TRACK_API and replace this literal. It is data, not
+   something to hand-edit — a typo'd coordinate is invisible until you look. */
+const TRACK_D =
+  'M 716.05 63.43 L 714.75 53.16 L 713.75 45.16 L 712.4 34.46 L 711.41 26.79 L 709.99 15.75 L ' +
+  '708.88 7.19 L 707.38 -4.16 L 706.12 -13.64 L 704.53 -25.29 L 701.99 -43.35 L 698.9 -65.27 L ' +
+  '697.29 -76.67 L 695.9 -86.59 L 694.34 -97.67 L 692.9 -107.96 L 691.66 -116.84 L 690.17 ' +
+  '-127.49 L 688.79 -137.37 L 687.35 -147.72 L 686.02 -157.34 L 684.62 -167.41 L 683.56 -175.03 ' +
+  'L 682.27 -184.36 L 681.22 -192.01 L 679.83 -202.1 L 678.76 -209.89 L 677.35 -220.17 L 676.26 ' +
+  '-228.09 L 674.83 -238.53 L 673.73 -246.58 L 672.28 -257.18 L 671.08 -265.97 L 669.62 -276.72 ' +
+  'L 668.43 -285.51 L 667.14 -294.97 L 666.1 -302.7 L 664.98 -310.98 L 664.15 -317.11 L 663.22 ' +
+  '-324 L 662.31 -330.71 L 661.95 -333.4 L 661.43 -337.24 L 660.75 -342.19 L 660.23 -345.92 L ' +
+  '659.49 -350.72 L 658.76 -354.59 L 656.71 -361.42 L 654.91 -365.02 L 652.95 -367.84 L 650.02 ' +
+  '-370.76 L 646.63 -372.95 L 642.47 -374.46 L 638.64 -374.97 L 634.63 -374.95 L 630.67 -374.8 ' +
+  'L 626.64 -374.71 L 622.41 -374.76 L 618.99 -374.95 L 614.84 -375.38 L 604.8 -377.31 L 599.71 ' +
+  '-378.9 L 594.71 -380.91 L 590.12 -383.2 L 581.8 -388.59 L 577.3 -392.32 L 572.99 -396.52 L ' +
+  '566.53 -404.17 L 560.1 -412.46 L 553.22 -419.49 L 544.86 -424.67 L 535.35 -427.17 L 526.18 ' +
+  '-426.68 L 518.27 -423.43 L 512.06 -417.65 L 508.45 -410.5 L 507.16 -405.79 L 506.24 -401.37 ' +
+  'L 504.65 -391.94 L 503.2 -380.94 L 501.77 -368.41 L 500.62 -355.96 L 500.12 -348.96 L 499.78 ' +
+  '-341.91 L 499.67 -334.34 L 499.95 -326.69 L 500.47 -320.74 L 501.54 -313.35 L 503.26 -305.48 ' +
+  'L 505.6 -297.69 L 507.05 -293.61 L 510.04 -285.95 L 512.42 -280.1 L 515.52 -272.29 L 517.79 ' +
+  '-266.26 L 520.59 -258.35 L 522.64 -252.27 L 525.11 -244.81 L 527.13 -238.78 L 529.84 -230.96 ' +
+  'L 532.11 -224.62 L 534.9 -217.07 L 537.05 -211.39 L 539.88 -204.11 L 541.85 -199.04 L 544.68 ' +
+  '-191.53 L 546.16 -187.39 L 547.57 -183.26 L 549.69 -176.65 L 550.45 -174.15 L 552.1 -168.3 L ' +
+  '555.19 -155.51 L 557.69 -142.38 L 559.64 -129.49 L 560.48 -122.49 L 561.22 -114.87 L 561.67 ' +
+  '-109.08 L 562.07 -102.41 L 562.3 -97.56 L 562.48 -92.81 L 562.58 -89.29 L 562.67 -85.03 L ' +
+  '562.71 -81.62 L 562.74 -77.24 L 562.72 -73.69 L 562.62 -69.46 L 562.4 -66.04 L 561.82 -62.01 ' +
+  'L 560.12 -56.43 L 556.79 -50.8 L 554.42 -48.2 L 551.67 -45.93 L 543.18 -41.58 L 539.79 ' +
+  '-40.37 L 535.23 -39.05 L 530.24 -37.89 L 524.48 -36.83 L 518.27 -35.97 L 505.76 -35.05 L ' +
+  '491.78 -34.8 L 483.51 -34.81 L 474.83 -34.93 L 461.36 -35.31 L 444.54 -36.05 L 434.66 -36.57 ' +
+  'L 424.32 -37.15 L 404.5 -38.35 L 383.36 -39.52 L 359.48 -40.72 L 336.08 -41.88 L 310.05 ' +
+  '-43.16 L 284.17 -44.45 L 258.01 -45.89 L 232.59 -47.34 L 220.41 -48.04 L 207.62 -48.79 L ' +
+  '194.26 -49.6 L 181.13 -50.44 L 168.94 -51.28 L 151.77 -52.6 L 146.62 -53.06 L 134.27 -54.36 ' +
+  'L 122.87 -55.99 L 113.79 -57.64 L 104.88 -59.56 L 93.49 -62.49 L 86.93 -64.41 L 62.38 -73.72 ' +
+  'L 51.82 -78.83 L 43.68 -83.08 L 32.82 -88.87 L 24.32 -93.39 L 13 -99.44 L 4.23 -104.26 L ' +
+  '-6.65 -110.45 L -17.63 -116.93 L -28.69 -123.68 L -38.45 -129.73 L -49.76 -136.72 L -59.77 ' +
+  '-142.87 L -69.12 -148.59 L -76.33 -152.99 L -87.78 -159.96 L -97.67 -165.94 L -108.83 ' +
+  '-172.65 L -118.47 -178.4 L -129.99 -185.22 L -141 -191.68 L -150.52 -197.21 L -157.67 ' +
+  '-201.32 L -165.27 -205.64 L -171.34 -209.1 L -178.12 -213.03 L -184.58 -216.85 L -190.61 ' +
+  '-220.45 L -196.3 -223.86 L -201.4 -226.91 L -206.2 -229.69 L -210.25 -231.75 L -214.14 ' +
+  '-233.3 L -217.89 -234.22 L -221.66 -234.5 L -224.65 -234.19 L -228.31 -233.05 L -230.64 ' +
+  '-231.77 L -233.61 -229.27 L -235.85 -226.65 L -237.98 -223.83 L -239.79 -221.32 L -242.21 ' +
+  '-217.86 L -244.35 -214.77 L -247.19 -210.61 L -250.5 -205.78 L -254.11 -200.54 L -258.02 ' +
+  '-194.88 L -265.61 -183.94 L -269.92 -177.73 L -274.24 -171.5 L -278.77 -164.97 L -282.93 ' +
+  '-158.91 L -286.48 -153.65 L -290.41 -147.67 L -293.5 -142.84 L -295.8 -139.14 L -299.57 ' +
+  '-132.85 L -301.05 -130.26 L -304.52 -123.99 L -307.64 -118.11 L -310.8 -111.92 L -313.86 ' +
+  '-105.8 L -315.42 -102.61 L -318.24 -96.8 L -320.81 -91.44 L -322.21 -88.53 L -324 -84.84 L ' +
+  '-325.71 -81.41 L -327.83 -77.34 L -329.64 -74.11 L -331.91 -70.61 L -334.68 -67.26 L -338.09 ' +
+  '-64.42 L -340.96 -62.97 L -342.99 -62.42 L -343.6 -62.32 L -344.37 -62.24 L -346.77 -62.27 L ' +
+  '-349.03 -62.69 L -351.16 -63.48 L -352.2 -64.02 L -353.15 -64.61 L -354.33 -65.52 L -355.33 ' +
+  '-66.47 L -356.67 -68 L -357.76 -69.36 L -359.36 -71.3 L -360.78 -73.03 L -362.73 -75.39 L ' +
+  '-364.85 -77.96 L -367.84 -81.59 L -370.66 -85 L -374.53 -89.64 L -377.83 -93.54 L -382.3 ' +
+  '-98.74 L -386.56 -103.63 L -391.8 -109.53 L -396.33 -114.55 L -402.22 -120.93 L -407.58 ' +
+  '-126.64 L -413.4 -132.7 L -420 -139.36 L -426.54 -145.73 L -432.53 -151.34 L -438.32 -156.55 ' +
+  'L -443.35 -160.87 L -447.66 -164.4 L -452.25 -167.99 L -456.87 -171.41 L -461.5 -174.58 L ' +
+  '-464.19 -176.29 L -468.57 -178.78 L -471.31 -180.17 L -474.31 -181.49 L -476.76 -182.36 L ' +
+  '-479.99 -183.22 L -483.23 -183.76 L -486.44 -183.87 L -488.66 -183.65 L -491.68 -182.93 L ' +
+  '-493.71 -182.15 L -496.67 -180.62 L -498.66 -179.43 L -501.76 -177.49 L -504.08 -175.9 L ' +
+  '-507.22 -173.59 L -509.69 -171.64 L -512.77 -168.99 L -515.3 -166.64 L -518.21 -163.68 L ' +
+  '-521.67 -159.77 L -524.86 -155.71 L -527.29 -152.34 L -530.31 -147.83 L -533.42 -142.92 L ' +
+  '-536.86 -137.29 L -540.44 -131.25 L -543.26 -126.35 L -547.05 -119.62 L -550.91 -112.55 L ' +
+  '-554.65 -105.58 L -558.77 -97.94 L -563.05 -90.09 L -567.42 -82.03 L -571.88 -73.76 L ' +
+  '-575.62 -66.8 L -579.97 -58.69 L -583.55 -51.99 L -588.32 -43.07 L -592.32 -35.61 L -597.26 ' +
+  '-26.43 L -601.11 -19.32 L -605.34 -11.53 L -609.3 -4.25 L -614.56 5.37 L -618.64 12.77 L ' +
+  '-623.75 21.93 L -627.64 28.83 L -633.23 38.64 L -637.54 46.19 L -642.87 55.53 L -648.55 ' +
+  '65.44 L -654.16 75.22 L -659.29 84.16 L -664.48 93.2 L -668.94 100.93 L -673.26 108.43 L ' +
+  '-676.72 114.39 L -680.31 120.53 L -683.57 126.08 L -685.81 129.86 L -688.09 133.67 L -690.06 ' +
+  '136.93 L -692.3 140.58 L -694.11 143.48 L -696.49 147.21 L -698.3 149.99 L -700.68 153.56 L ' +
+  '-702.5 156.22 L -704.76 159.42 L -706.56 161.91 L -708.35 164.34 L -709.58 166 L -711.06 ' +
+  '168.13 L -712.07 169.73 L -712.78 170.98 L -714.41 174.85 L -715.19 178.84 L -715.19 182.77 ' +
+  'L -714.61 186.45 L -713.37 191.22 L -711.2 197.09 L -707.76 204.34 L -703.14 212.2 L -697.48 ' +
+  '220.02 L -690.28 228.01 L -682.37 234.88 L -677.63 238.36 L -673.04 241.4 L -669.22 243.68 L ' +
+  '-664.1 246.36 L -659.18 248.47 L -654.9 249.94 L -650.81 251.08 L -646.76 252.06 L -643.69 ' +
+  '252.75 L -639.75 253.69 L -636.13 254.65 L -630.88 256.28 L -628.78 257.07 L -626.76 257.98 ' +
+  'L -622.74 260.54 L -620.78 262.48 L -618.93 265.24 L -617.81 267.96 L -617.06 271.15 L ' +
+  '-616.68 274.29 L -616.54 277.82 L -616.61 285.38 L -616.69 293.58 L -616.64 301.78 L -616.06 ' +
+  '311.08 L -614.56 321.02 L -612.29 330.02 L -610.64 334.75 L -608.52 339.52 L -604.22 346.74 ' +
+  'L -598.15 354.01 L -590.79 360.69 L -582.11 367.54 L -574.78 373.32 L -569.02 377.94 L ' +
+  '-564.45 381.65 L -558.67 386.37 L -554.32 389.97 L -548.64 394.68 L -542.69 399.64 L -537.24 ' +
+  '404.19 L -533.99 406.91 L -529.15 410.98 L -522.88 416.27 L -514.92 423.22 L -511.47 426.6 L ' +
+  '-508.38 430.19 L -504.64 436.04 L -501.97 441.96 L -500.34 446.08 L -499.62 447.86 L -495.69 ' +
+  '456.66 L -493.78 460.52 L -492.39 463.18 L -490.65 466.35 L -489.09 469.03 L -487.35 471.81 ' +
+  'L -485.29 474.79 L -483.14 477.34 L -481.18 479.13 L -478.76 480.71 L -476.4 481.67 L ' +
+  '-473.54 482.21 L -471.43 482.21 L -469.14 481.84 L -467.26 481.22 L -465.16 480.14 L -464.04 ' +
+  '479.35 L -463.02 478.47 L -461.48 476.81 L -459.23 473.49 L -458.3 471.7 L -457.51 469.93 L ' +
+  '-456.56 467.31 L -455.83 464.97 L -454.95 461.69 L -454.28 458.92 L -453.31 454.5 L -452.55 ' +
+  '450.68 L -451.57 445.48 L -450.68 440.46 L -449.54 433.77 L -448.63 428.2 L -447.45 420.84 L ' +
+  '-446.43 414.5 L -445.06 406.26 L -443.59 397.59 L -441.94 387.91 L -440.31 378.39 L -438.57 ' +
+  '368.49 L -436.96 359.52 L -435.06 348.96 L -432.98 337.37 L -430.86 325.42 L -429.97 320.4 L ' +
+  '-427.9 308.71 L -425.79 296.75 L -423.5 283.78 L -421.16 270.52 L -419.02 258.63 L -413.47 ' +
+  '228.84 L -410.57 213.82 L -407.96 200.63 L -405.25 187.69 L -402.87 177.22 L -399.96 165.44 ' +
+  'L -397.5 156.09 L -393.88 143.19 L -391.13 133.98 L -387.27 121.87 L -384.88 114.69 L ' +
+  '-380.85 103.15 L -376.64 91.52 L -372.31 79.8 L -367.68 67.5 L -363.57 56.63 L -360.48 48.52 ' +
+  'L -356.85 38.96 L -354.11 31.71 L -352.07 26.28 L -350.03 20.87 L -348.04 15.57 L -346.07 ' +
+  '10.34 L -344.58 6.4 L -342.74 1.5 L -341.3 -2.34 L -339.68 -6.65 L -338.28 -10.38 L -336.64 ' +
+  '-14.67 L -335.54 -17.41 L -334.23 -20.43 L -332.95 -22.93 L -331.25 -25.59 L -329.61 -27.49 ' +
+  'L -327.26 -29.38 L -324.46 -30.75 L -321.71 -31.41 L -319.49 -31.52 L -316.67 -31.21 L -314 ' +
+  '-30.52 L -311.49 -29.52 L -309.54 -28.48 L -307.33 -26.95 L -305.64 -25.52 L -303.37 -23.31 ' +
+  'L -301.51 -21.35 L -298.77 -18.47 L -296.4 -16.04 L -292.89 -12.59 L -290.14 -9.98 L -285.85 ' +
+  '-6.02 L -281.41 -2.02 L -276.86 1.96 L -272.62 5.56 L -266.67 10.45 L -261.84 14.33 L ' +
+  '-255.18 19.58 L -249.87 23.73 L -242.72 29.32 L -237.17 33.7 L -229.98 39.49 L -223.37 44.91 ' +
+  'L -216.91 50.32 L -210.58 55.7 L -199.38 65.26 L -188.03 74.8 L -176.76 83.81 L -165.24 ' +
+  '92.62 L -154.55 100.36 L -143.12 107.95 L -131.75 114.93 L -125.89 118.23 L -119.93 121.13 L ' +
+  '-114.98 123.05 L -108.8 124.78 L -102.56 125.83 L -95.99 126.49 L -89.89 127.08 L -83.52 ' +
+  '127.77 L -78.72 128.34 L -72.91 129.08 L -68.2 129.71 L -63.15 130.42 L -57.63 131.22 L ' +
+  '-52.94 131.91 L -48.89 132.51 L -44.34 133.23 L -40.73 133.97 L -36.02 135.57 L -33.04 ' +
+  '137.25 L -29.22 140.78 L -27.16 144.01 L -25.91 147.53 L -25.52 149.83 L -25.44 153.59 L ' +
+  '-25.78 157.63 L -26.09 160.97 L -26.43 165.08 L -26.65 168.96 L -26.8 172.79 L -26.86 175.39 ' +
+  'L -26.88 177.73 L -26.83 181.65 L -26.78 183.26 L -26.67 185.5 L -26.25 190.59 L -25.48 ' +
+  '194.85 L -24.72 197.5 L -23.51 200.62 L -22.38 203.04 L -20.78 206.08 L -19.23 208.63 L ' +
+  '-17.41 211.17 L -15.69 213.22 L -13.6 215.39 L -11.72 217.17 L -9.35 219.12 L -7.51 220.47 L ' +
+  '-5.21 221.97 L -3.16 223.15 L .91 225.15 L 3.56 226.24 L 5.99 227.09 L 9.35 228.07 L 13.38 ' +
+  '228.97 L 17.62 229.64 L 22.28 230.16 L 27.69 230.58 L 33.56 230.91 L 39.89 231.23 L 46.25 ' +
+  '231.5 L 53 231.78 L 60.56 232.08 L 66.59 232.32 L 74.29 232.65 L 81.25 233.02 L 89.31 233.51 ' +
+  'L 95.85 233.93 L 104.28 234.47 L 109.18 234.78 L 116.92 235.28 L 123.6 235.7 L 131.13 236.17 ' +
+  'L 137.14 236.54 L 144.7 237.01 L 150.16 237.34 L 156.82 237.75 L 168.27 238.44 L 172.09 ' +
+  '238.67 L 174.63 238.82 L 176.53 238.93 L 178.97 239.08 L 180.8 239.19 L 183.01 239.32 L ' +
+  '184.79 239.41 L 186.93 239.46 L 188.78 239.42 L 190.83 239.23 L 192.58 238.92 L 194.46 ' +
+  '238.31 L 195.87 237.62 L 197.46 236.59 L 198.6 235.61 L 199.84 234.27 L 200.74 233.01 L ' +
+  '201.58 231.48 L 202.07 230.29 L 202.54 228.69 L 202.86 227.07 L 203.14 225.38 L 203.42 ' +
+  '223.57 L 203.7 221.56 L 204.04 219.2 L 204.46 216.31 L 204.8 214.02 L 205.37 210.41 L 205.88 ' +
+  '207.36 L 206.64 203 L 207.31 199.43 L 208.26 194.6 L 209.03 190.93 L 210.02 186.47 L 211.13 ' +
+  '181.84 L 212.25 177.57 L 213.57 173.15 L 215.12 168.9 L 217 164.87 L 218.73 162.02 L 223.7 ' +
+  '156.4 L 226.8 154.01 L 230.15 152.1 L 233.69 150.76 L 235.98 150.22 L 239.84 149.73 L 243.48 ' +
+  '149.56 L 247.95 149.58 L 252.17 149.75 L 257.01 149.99 L 261.82 150.21 L 267.96 150.46 L ' +
+  '272.7 150.67 L 278.82 150.98 L 283.43 151.23 L 289.38 151.58 L 294.89 151.93 L 300.31 152.29 ' +
+  'L 305.99 152.66 L 311.59 153.04 L 317.08 153.42 L 322.02 153.77 L 325.68 154.03 L 330.17 ' +
+  '154.36 L 333.78 154.62 L 337.44 154.91 L 340.82 155.21 L 346.55 155.97 L 352.04 157.56 L ' +
+  '356.39 160.15 L 359.76 163.85 L 361.07 166.14 L 362.04 168.71 L 362.69 171.29 L 363.22 174.2 ' +
+  'L 363.58 176.84 L 363.95 180.46 L 364.27 183.95 L 364.74 188.21 L 365.28 191.68 L 365.79 ' +
+  '194.31 L 366.79 198.41 L 368.02 202.37 L 369.63 206.39 L 371.42 209.98 L 372.67 212.11 L ' +
+  '374.01 214.18 L 376.39 217.39 L 378.03 219.32 L 381.11 222.46 L 383.7 224.7 L 387.4 227.41 L ' +
+  '390.49 229.3 L 394.61 231.39 L 398.22 232.89 L 402.97 234.5 L 408.42 235.94 L 414.01 237.04 ' +
+  'L 420.13 237.93 L 427.23 238.65 L 434.56 239.19 L 442.99 239.86 L 449.84 240.45 L 459.37 ' +
+  '241.17 L 467.68 241.68 L 477.69 242.21 L 486.19 242.63 L 497.79 243.23 L 507.72 243.77 L ' +
+  '520.18 244.49 L 532.91 245.23 L 555.07 246.51 L 576.06 247.75 L 593.01 248.79 L 608.12 ' +
+  '249.72 L 622.45 250.53 L 633.33 251.07 L 641.76 251.34 L 646.86 251.4 L 652.19 251.32 L ' +
+  '661.38 250.48 L 665.76 249.4 L 669.3 247.96 L 673.47 245.37 L 676.55 242.73 L 680.22 239.13 ' +
+  'L 683.85 235.36 L 691.09 227.13 L 698.27 217.96 L 704.51 208.93 L 710.39 199.19 L 712.63 ' +
+  '195.11 L 714.73 191.02 L 717.14 185.99 L 718.97 181.87 L 721.22 176.4 L 722.83 172.13 L ' +
+  '724.6 166.72 L 726.14 160.8 L 727.11 155.08 L 727.45 149.29 L 726.79 138.33 L 725.56 127.56 ' +
+  'L 724.05 115.03 L 722.2 101.5 L 720.05 86.82 L 717.55 70.19 z';
+
+/* Turn numbers, [x, y] in the same coordinate space as TRACK_D. These are the
+   payload's own TURNDATA apexes (APEX_X1/APEX_Y1), not anything derived here:
+   measured against this path they sit 0.2-10.6 units off the centreline and the
+   road is ~24 units wide, so they land on the carriageway and need no
+   projection. Baked for the same reason TRACK_D is — the numbers paint on the
+   first frame instead of waiting on the fetch. Same 23 turns, same order, so
+   the index is the turn number. */
+const TURN_D = [
+  [ 645.03, -367.04], [ 589.86, -389.41], [ 523.44, -420.56], [ 500.27, -316.14],
+  [ 548.02,  -56.97], [  98.09,  -63.97], [-219.43, -228.58], [-343.52,  -68.21],
+  [-486.00, -178.94], [-715.92,  191.12], [-621.42,  267.72], [-596.27,  355.42],
+  [-474.26,  476.54], [-323.61,  -24.46], [-156.00,  107.00], [ -32.27,  142.74],
+  [  -1.74,  223.00], [ 194.58,  232.66], [ 226.19,  158.07], [ 359.21,  168.93],
+  [ 412.76,  235.07], [ 667.44,  245.03], [ 720.19,  164.07],
+];
+
+const svgMap  = $('map'), circuit = $('circuit'), carDot = $('car');
+const secPaths  = [1, 2, 3].map(i => $('sec' + i));
+const secLabels = [1, 2, 3].map(i => $('sec' + i + 'lbl'));
+const startLine = $('startline'), startLabel = $('startlbl');
+const turnG = $('turnlabels');
+let curTurns = TURN_D;      // swapped for the fetched TURNDATA when it arrives
+const canPath = typeof circuit.getTotalLength === 'function'
+             && typeof circuit.getPointAtLength === 'function'
+             && typeof circuit.getBBox === 'function';
+let circuitLen = 0;
+/* The lap as a fixed set of points, measured once per setTrack. Every clearance
+   question below is asked against this set rather than against the path, because
+   the sector search alone evaluates a couple of thousand candidate boxes and
+   getPointAtLength is a real geometry query — a million of them is seconds of
+   first paint. 270 points is a sample every 19 units on this lap against a road
+   35 units wide, so a box that misses the road here does not hit it on the path.
+   Strides are taken so that n=90 picks every third point, which is the same set
+   of positions the START search used before this existed. */
+let lapPts = [];
+
+/* Box-to-box and box-to-point clearance, for the two label searches. Both work
+   the same way: propose a spot, measure what the text would land on, keep the
+   roomiest. Boxes are half-open intervals in x and y, so a gap of zero means
+   the two are touching and anything negative would have been an overlap. */
+const boxGap = (a, b) => Math.hypot(Math.max(a.x0 - b.x1, 0, b.x0 - a.x1),
+                                    Math.max(a.y0 - b.y1, 0, b.y0 - a.y1));
+
+/* Distance from a box to the nearest piece of road, over `n` of those samples
+   taken at an even stride through the lap. The shape arrives from the API, so
+   what sits next to a label is not knowable up front — it has to be measured. */
+function boxRoadGap(box, n) {
+  let d = Infinity;
+  const stride = lapPts.length / n;
+  for (let i = 0; i < n; i++) {
+    const p = lapPts[(i * stride) | 0];
+    d = Math.min(d, Math.hypot(Math.max(box.x0 - p.x, 0, p.x - box.x1),
+                               Math.max(box.y0 - p.y, 0, p.y - box.y1)));
+  }
+  return d;
+}
+
+/* Unit tangent at an arc-length position, by differencing a short step either
+   side. Used to stand the start/finish bar across the road at right angles. */
+function tangentAt(len) {
+  const a = circuit.getPointAtLength(Math.max(0, len - 1));
+  const c = circuit.getPointAtLength(Math.min(circuitLen, len + 1));
+  const dx = c.x - a.x, dy = c.y - a.y, m = Math.hypot(dx, dy) || 1;
+  return { x: dx / m, y: dy / m };
+}
+
+function setTrack(d) {
+  circuit.setAttribute('d', d);
+  circuitLen = circuit.getTotalLength();
+
+  // Fit the viewBox to whatever shape we ended up with, rather than trusting
+  // the API's SVG_VIEWBOX, and scale the road/car to the shape's own size.
+  const b = circuit.getBBox(), k = Math.max(b.width, b.height);
+  // Margin around the shape. Wider than it looks like it needs to be because the
+  // sector labels live out here rather than on the road — a label is k*0.062
+  // tall and needs to clear the road by more than that, so the panel has to
+  // offer the room or the search has nowhere legal to put it and clips at the
+  // edge instead.
+  const pad = k * 0.10;
+  svgMap.setAttribute('viewBox',
+    (b.x - pad) + ' ' + (b.y - pad) + ' ' + (b.width + 2 * pad) + ' ' + (b.height + 2 * pad));
+  const road = k * 0.024;
+  circuit.setAttribute('stroke-width', road.toFixed(1));
+  carDot.setAttribute('r', (k * 0.030).toFixed(1));
+
+  lapPts = [];
+  for (let i = 0; i < 270; i++) lapPts.push(circuit.getPointAtLength(i * circuitLen / 270));
+
+  // --- turn numbers ---
+  // Straight at the payload's own apexes, which is where they belong: inside the
+  // sectors, on the circuit, each one on the corner it names. They need no
+  // projection — measured against this path all 23 land within 11 units of the
+  // centreline, well inside the road — and no search of their own. Standing them
+  // off the road to dodge the labels was tried and does not work: a number is
+  // 43 units tall and the sector label it collides with is 142 by 89, so there
+  // is no step short of leaving the corner that gets out from under it. The
+  // labels move instead — they are three, they are large, and a third of a lap
+  // each is a lot of road to be near. Rebuilt rather than moved, because the
+  // baked set and the fetched set differ in count (23 either way for this
+  // track, but nothing guarantees that).
+  const tfs = k * 0.030;
+  const turnBoxes = [];
+  turnG.textContent = '';
+  for (let i = 0; i < curTurns.length; i++) {
+    const t = curTurns[i], x = +t[0], y = +t[1];
+    if (!isFinite(x) || !isFinite(y)) continue;
+    const txt = String(i + 1), w = txt.length * tfs * 0.8;
+    turnBoxes.push({ x0: x - w / 2, x1: x + w / 2, y0: y - tfs / 2, y1: y + tfs / 2 });
+
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    el.setAttribute('class', 'turnlbl');
+    el.setAttribute('x', x.toFixed(2));
+    el.setAttribute('y', y.toFixed(2));
+    el.setAttribute('text-anchor', 'middle');
+    el.setAttribute('font-size', tfs.toFixed(1));
+    el.setAttribute('stroke-width', (k * 0.009).toFixed(1));   // halo
+    el.textContent = txt;
+    turnG.appendChild(el);
+  }
+
+  // --- sectors and their labels ---
+  // A third of the lap per sector. Each sector path is the same `d` as the road
+  // with one dash a third long followed by a gap covering the rest of the lap,
+  // pushed along by its own negative offset. That paints exactly [i*seg,
+  // (i+1)*seg] per path without splitting or re-parsing the path data.
+  const seg = circuitLen / 3;
+  for (let i = 0; i < 3; i++) {
+    const p = secPaths[i];
+    p.setAttribute('d', d);
+    p.setAttribute('stroke-width', road.toFixed(1));
+    p.setAttribute('stroke-dasharray', seg.toFixed(2) + ' ' + circuitLen.toFixed(2));
+    p.setAttribute('stroke-dashoffset', (-i * seg).toFixed(2));
+  }
+
+  // The sector labels belong BESIDE the circuit, and getting them there is the
+  // whole of this block. Two things made the obvious approach fail. The label
+  // midpoint is not a considered position — a third of the lap is 1700 units of
+  // road and the label lands wherever the halfway point happens to be; measured
+  // on this shape that put S2 on T10 and S3 on T18, the T18 one covering the
+  // number outright. And stepping straight out from a midpoint does not work
+  // either, because the lap doubles back: S1 is walled in on its own normal and
+  // S2's midpoint needs 350 units before it finds air.
+  //
+  // So the label slides. Eight anchors across its own sector, the road's normal
+  // at each, a fan either side of that normal, and a distance sweep — a few
+  // thousand boxes, all scored against the road, the 23 turn numbers and the
+  // labels already placed. The NEAREST spot clearing everything by k*0.05 wins,
+  // because a sector label that has wandered across the map stops naming
+  // anything; and the clearance floor is what puts it off the tarmac rather
+  // than merely off the numbers, which is the difference the user could see.
+  // Anchors stay within 15%-85% of the sector so a label cannot drift into the
+  // third next door and start lying about which sector it is.
+  const sfs = k * 0.062, want = k * 0.050;
+  const sw = 3 * sfs * 0.8, ins = k * 0.012;
+  const placed = [];
+  for (let i = 0; i < 3; i++) {
+    const lbl = secLabels[i];
+    const mid = circuit.getPointAtLength((i + 0.5) * seg);
+    let lx = mid.x, ly = mid.y, best = null, fallback = null;
+    for (let a = 0.15; a <= 0.851; a += 0.10) {
+      const ln = (i + a) * seg, at = circuit.getPointAtLength(ln), tn = tangentAt(ln);
+      for (let sgn = 0; sgn < 2; sgn++) {           // the road has two sides
+        const nx = sgn ? tn.y : -tn.y, ny = sgn ? -tn.x : tn.x;
+        for (let o = -40; o <= 40; o += 20) {       // a fan around the normal
+          const th = o * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+          const ux = nx * co - ny * si, uy = nx * si + ny * co;
+          for (let r = k * 0.04; r <= k * 0.28; r += k * 0.010) {
+            const px = at.x + ux * r, py = at.y + uy * r;
+            const cand = { x0: px - sw / 2, x1: px + sw / 2, y0: py - sfs / 2, y1: py + sfs / 2 };
+            // Inside the padded panel. Past its edge the label is outside the
+            // viewBox and gets clipped, which is worse than a cramped one.
+            if (cand.x0 < b.x - pad + ins || cand.x1 > b.x + b.width + pad - ins ||
+                cand.y0 < b.y - pad + ins || cand.y1 > b.y + b.height + pad - ins) continue;
+            let d = boxRoadGap(cand, 90);           // the road it is labelling included
+            for (const tb of turnBoxes) d = Math.min(d, boxGap(cand, tb));
+            for (const pb of placed) d = Math.min(d, boxGap(cand, pb));
+            if (!fallback || d > fallback.d) fallback = { px, py, d };
+            if (d <= want) continue;
+            // Nearest wins; at equal distance the roomier of the two does.
+            if (!best || r < best.r - 0.5 || (Math.abs(r - best.r) <= 0.5 && d > best.d))
+              best = { px, py, r, d };
+          }
+        }
+      }
+    }
+    // On a shape with nowhere legal the label still moves to the roomiest spot
+    // found rather than back onto the road — a cramped label beats an overlapped
+    // one. Only a panel too small for any candidate at all leaves it at the
+    // midpoint.
+    const pick = best || fallback;
+    if (pick) { lx = pick.px; ly = pick.py; }
+    placed.push({ x0: lx - sw / 2, x1: lx + sw / 2, y0: ly - sfs / 2, y1: ly + sfs / 2 });
+
+    lbl.setAttribute('x', lx.toFixed(2));
+    lbl.setAttribute('y', ly.toFixed(2));
+    lbl.setAttribute('text-anchor', 'middle');
+    lbl.setAttribute('font-size', sfs.toFixed(1));
+    lbl.setAttribute('stroke-width', (k * 0.014).toFixed(1));   // halo
+  }
+
+  // Start/finish: a white bar stood across the road at lap zero. Sized as a
+  // fraction of the road so it scales with the shape, and long enough to poke
+  // past both kerbs — at road*0.8 x road*0.45 it rendered 26x7 CSS px, which is
+  // a real tick but too easy to miss for the one marker that matters most.
+  const s = circuit.getPointAtLength(0), t = tangentAt(0);
+  const nx = -t.y, ny = t.x, half = road * 0.95;
+  startLine.setAttribute('x1', (s.x - nx * half).toFixed(2));
+  startLine.setAttribute('y1', (s.y - ny * half).toFixed(2));
+  startLine.setAttribute('x2', (s.x + nx * half).toFixed(2));
+  startLine.setAttribute('y2', (s.y + ny * half).toFixed(2));
+  startLine.setAttribute('stroke-width', (road * 0.6).toFixed(1));
+
+  // Label the start/finish bar. Where the text can sit has to be measured, not
+  // assumed: the shape arrives from the API, so nothing about the neighbourhood
+  // is knowable up front. Singapore's start point is walled in — cyan above,
+  // magenta below, the bar across the road, and only 27 units of gap to its
+  // right — and every fixed offset put "START" either off the panel or straight
+  // through the bar it names. So try eight directions around the bar tip and
+  // keep whichever text box clears the road by the most. The width is a
+  // character count against this face's own metrics, which are wide: "0" is
+  // .80em and "N" is .97em, so .8em per character is the honest estimate. The
+  // self-check asserts the chosen box really does clear the bar.
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  const fs = k * 0.038, w = startLabel.textContent.length * fs * 0.8;
+  const reach = half + fs * 0.7, bx0 = b.x - pad, by0 = b.y - pad;
+  const bx1 = b.x + b.width + pad, by1 = b.y + b.height + pad;
+  let lx = s.x, ly = s.y, anch = 'middle', best = -1;
+  for (let a = 0; a < 8; a++) {
+    const th = a * Math.PI / 4, dx = Math.cos(th), dy = Math.sin(th);
+    const px = s.x + dx * reach, py = s.y + dy * reach;
+    const x0 = dx >= 0 ? px : px - w, x1 = dx >= 0 ? px + w : px;
+    const y0 = py - fs / 2, y1 = py + fs / 2;
+    if (x0 < bx0 || x1 > bx1 || y0 < by0 || y1 > by1) continue;   // would run off the panel
+    const cand = { x0, x1, y0, y1 };
+    let d = boxRoadGap(cand, 90);
+    for (const tb of turnBoxes) d = Math.min(d, boxGap(cand, tb));
+    if (d > best) { best = d; lx = px; ly = py; anch = dx >= 0 ? 'start' : 'end'; }
+  }
+  if (best < 0) {   // every direction left the panel — clamp an outward nudge instead
+    const ox = s.x - cx, oy = s.y - cy, om = Math.hypot(ox, oy) || 1;
+    lx = Math.min(Math.max(s.x + ox / om * k * 0.055, bx0 + road), bx1 - road);
+    ly = Math.min(Math.max(s.y + oy / om * k * 0.055, by0 + road), by1 - road);
+    anch = lx > cx ? 'end' : 'start';
+  }
+  startLabel.setAttribute('x', lx.toFixed(2));
+  startLabel.setAttribute('y', ly.toFixed(2));
+  startLabel.setAttribute('text-anchor', anch);
+  startLabel.setAttribute('font-size', fs.toFixed(1));
+  startLabel.setAttribute('stroke-width', (k * 0.011).toFixed(1));
+}
+
+/* Install a path, falling back to the known-good shape if the fetched one
+   will not parse. A throw here would take the render loop down with it. */
+function useTrack(d) {
+  try { setTrack(d); return true; }
+  catch (e) { setTrack(TRACK_D); return false; }
+}
+
+if (canPath) {
+  setTrack(TRACK_D);
+  fetch(TRACK_API, { cache: 'no-cache' })
+    .then(r => r.ok ? r.json() : null)
+    .then(j => {
+      const d = j && j.TRACK_SVG, td = j && j.TURNDATA;
+      if (Array.isArray(td) && td.length) curTurns = td.map(t => [+t.APEX_X1, +t.APEX_Y1]);
+      if (typeof d === 'string' && /^\s*[Mm]/.test(d) && useTrack(d)) {
+        $('trackname').textContent = (j.TRACK_DETAIL && j.TRACK_DETAIL.TRACK) || TRACK_NAME;
+        // The self-check ran against the fallback before this resolved, so
+        // validate again now the real geometry is in.
+        if (wantCheck()) selfCheck();
+      }
+    })
+    .catch(() => {});        // offline: keep the fallback shape
+}
+
+/* Lap fraction (0..1) -> point on the circuit. */
+function trackPoint(frac) {
+  if (!circuitLen) return null;
+  const f = ((frac % 1) + 1) % 1;
+  const p = circuit.getPointAtLength(f * circuitLen);
+  return { x: +p.x.toFixed(2), y: +p.y.toFixed(2) };
+}
+
+function render(s) {
+  $('spd').textContent  = Math.round(s.spd);
+  $('gear').textContent = s.g;
+  // rpm runs 9000-15000, so the track is scaled against 15000 and never sits
+  // empty — which is right, that is the real idle for this engine.
+  $('rpmbar').style.width = (s.rpm / 15000 * 100) + '%';
+  $('rpmbar').classList.toggle('hot', s.rpm > 13000);
+  $('thrbar').style.width = (s.throttle * 100) + '%';
+  $('brkbar').style.width = (s.brake * 100) + '%';
+
+  $('lapnum').textContent = lapNum;
+  $('tCur').textContent   = fmt(lapMs);
+  $('tLast').textContent  = fmt(lastLap);
+  $('tBest').textContent  = fmt(bestLap);
+  $('tSec').textContent   = sec.map(fmtSec).join(' / ');
+
+  // car position on the circuit, straight from where it is around the lap
+  $('dist').textContent = Math.round(dist);
+  const p = trackPoint(dist / LAP_LEN);
+  if (p) { carDot.setAttribute('cx', p.x); carDot.setAttribute('cy', p.y); }
+
+  const d = $('dLast');
+  if (lastLap != null && bestLap != null) {
+    if (lastLap === bestLap) { d.textContent = 'BEST'; d.className = 'delta best'; }
+    else {
+      const diff = lastLap - bestLap;
+      d.textContent = (diff > 0 ? '+' : '-') + (Math.abs(diff) / 1000).toFixed(3);
+      d.className = 'delta ' + (diff > 0 ? 'down' : 'up');
+    }
+  } else { d.textContent = ''; d.className = 'delta'; }
+}
+
+/* ---- loop (fixed step, so the simulation is frame-rate independent) ---- */
+let last = performance.now(), acc = 0;
+const STEP = 1 / 60;
+function frame(now) {
+  acc += Math.min(0.25, (now - last) / 1000); last = now;
+  let s = null;
+  while (acc >= STEP) { s = step(STEP); acc -= STEP; }
+  if (s) render(s);
+  requestAnimationFrame(frame);
+}
+
+/* ------------------------------------------------------------------ *
+ * Self-check: ?selfcheck=1
+ * Verifies the profile is self-consistent — the thing that can actually
+ * break is the braking/traction relaxation. No framework, just asserts.
+ * ------------------------------------------------------------------ */
+function selfCheck() {
+  const log = [], ok = (name, cond) => { log.push((cond ? 'PASS  ' : 'FAIL  ') + name); return cond; };
+  let pass = true;
+
+  pass &= ok('profile length = ' + N, V.length === N);
+  pass &= ok('lap time sane (' + fmt(LAP_TIME_MS) + ')', LAP_TIME_MS > 85000 && LAP_TIME_MS < 105000);
+  pass &= ok('never exceeds V_MAX', V.every(v => v <= V_MAX + 1e-9));
+  pass &= ok('never stalls', V.every(v => v > 20 / 3.6));
+  pass &= ok('step between samples is finite', V.every(v => Number.isFinite(v)));
+
+  let worstBrake = 0, worstAccel = 0;
+  for (let i = 0; i < N; i++) {
+    const a = (V[(i + 1) % N] ** 2 - V[i] ** 2) / (2 * DS);
+    worstBrake = Math.min(worstBrake, a);
+    worstAccel = Math.max(worstAccel, a);
+  }
+  pass &= ok('braking never exceeds A_BRAKE (' + worstBrake.toFixed(1) + ')', worstBrake >= -A_BRAKE - 0.5);
+  pass &= ok('traction never exceeds A_ACCEL (' + worstAccel.toFixed(1) + ')', worstAccel <= A_ACCEL + 0.5);
+
+  // Apex speeds are actually reached: the profile should dip near each apex.
+  let reached = 0;
+  for (const c of CORNERS) {
+    const i = Math.round(c.d / DS) % N;
+    if (speedAt(i * DS) * 3.6 <= c.v + 8) reached++;
+  }
+  pass &= ok('all ' + CORNERS.length + ' apexes reachable (got ' + reached + ')', reached === CORNERS.length);
+
+  // Coherence of the values the dashboard actually renders.
+  const straight = sample(4600);              // run to the line
+  pass &= ok('main straight: throttle pinned (' + straight.throttle.toFixed(2) + ')', straight.throttle > 0.9);
+  pass &= ok('main straight: no brake', straight.brake === 0);
+  pass &= ok('main straight: top gear', straight.g === 8);
+
+  const hairpin = sample(2215);               // T13
+  pass &= ok('hairpin: below 100 km/h (' + hairpin.spd.toFixed(0) + ')', hairpin.spd < 100);
+  pass &= ok('hairpin: low gear (' + hairpin.g + ')', hairpin.g <= 3);
+
+  // Sweep the lap: no impossible combinations anywhere.
+  let both = 0, maxLat = 0, gears = new Set(), minSpd = Infinity;
+  for (let d = 0; d < LAP_LEN; d += DS) {
+    const s = sample(d);
+    if (s.throttle > 0.05 && s.brake > 0.05) both++;
+    maxLat = Math.max(maxLat, Math.abs(s.latG));
+    minSpd = Math.min(minSpd, s.spd);
+    gears.add(s.g);
+  }
+  pass &= ok('never on throttle and brake together', both === 0);
+  pass &= ok('lateral g stays physical (' + maxLat.toFixed(1) + 'g)', maxLat < 5.5);
+  pass &= ok('never stops on track (' + minSpd.toFixed(0) + ' km/h)', minSpd > 60);
+
+  // 1st is deliberately not expected: on a flying lap the slowest point is the
+  // T13 hairpin at ~86 km/h, a 2nd-gear corner. Anything using 1st would mean
+  // the lap had gone wrong.
+  const missing = [];
+  for (let g = 2; g <= 8; g++) if (!gears.has(g)) missing.push(g);
+  pass &= ok('gears 2-8 all used' + (missing.length ? ' (missing ' + missing + ')' : ''),
+             missing.length === 0);
+
+  // Circuit map. The dot is placed by arc length, so a lap must close back on
+  // itself and the car must actually travel around the shape rather than sit
+  // on one spot while the speed readout moves.
+  if (!canPath) {
+    pass &= ok('circuit: SVG getPointAtLength available', false);
+  } else {
+    pass &= ok('circuit geometry resolved (' + circuitLen.toFixed(0) + ' units)', circuitLen > 0);
+
+    const p0 = trackPoint(0), p1 = trackPoint(1), pm = trackPoint(0.5);
+    const gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    pass &= ok('lap closes on the map (gap ' + gap.toFixed(2) + ')', gap < 1);
+    pass &= ok('halfway round is elsewhere on the map',
+               Math.hypot(pm.x - p0.x, pm.y - p0.y) > 1);
+
+    const bb = circuit.getBBox();
+    let outside = 0, frozen = 0, prev = p0;
+    for (let d = DS; d <= LAP_LEN; d += DS) {
+      const q = trackPoint(d / LAP_LEN);
+      if (!q || q.x < bb.x || q.x > bb.x + bb.width ||
+                q.y < bb.y || q.y > bb.y + bb.height) outside++;
+      if (q) {
+        if (Math.hypot(q.x - prev.x, q.y - prev.y) < 1e-6) frozen++;
+        prev = q;
+      }
+    }
+    pass &= ok('dot never leaves the circuit bounds', outside === 0);
+    pass &= ok('dot never freezes (' + frozen + ' stalled samples)', frozen === 0);
+
+    // The sector overlay is drawn from dash maths rather than from split paths,
+    // so the thing that can silently break is a gap or overlap at a boundary.
+    // Assert each sector starts exactly a third further along than the last and
+    // that all three still carry the live path data.
+    const seg = circuitLen / 3;
+    const tile = secPaths.every((p, i) => {
+      const da = String(p.getAttribute('stroke-dasharray') || '').trim().split(/\s+/).map(Number);
+      const off = Number(p.getAttribute('stroke-dashoffset'));
+      return Math.abs(da[0] - seg) < 0.5 && Math.abs(da[1] - circuitLen) < 0.5 &&
+             Math.abs(-off - i * seg) < 0.5 && p.getAttribute('d') === circuit.getAttribute('d');
+    });
+    pass &= ok('3 sectors tile the lap exactly (' + seg.toFixed(0) + ' units each)', tile);
+
+    const lblBox = el => {
+      const fs = Number(el.getAttribute('font-size')) || 0;
+      const w = (el.textContent || '').length * fs * 0.8;
+      const x = Number(el.getAttribute('x')), y = Number(el.getAttribute('y'));
+      return { x0: x - w / 2, x1: x + w / 2, y0: y - fs / 2, y1: y + fs / 2, t: el.textContent };
+    };
+    const bGap = (a, b) => Math.hypot(Math.max(a.x0 - b.x1, 0, b.x0 - a.x1),
+                                      Math.max(a.y0 - b.y1, 0, b.y0 - a.y1));
+
+    // Labels are positioned from getPointAtLength, so a NaN would put S1/S2/S3
+    // somewhere meaningless. Containment in the path's own bbox is deliberately
+    // NOT asserted any more — the labels are placed off the circuit on purpose,
+    // which is the point of the search above. What still matters is the viewBox,
+    // because past its edge a label is clipped: checked as the whole text box
+    // rather than the anchor, since a box half over the edge is a clipped label.
+    const vb = String(svgMap.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+    const offPanel = secLabels.map(lblBox).filter(bx =>
+      !Number.isFinite(bx.x0) || bx.x0 < vb[0] || bx.x1 > vb[0] + vb[2] ||
+      bx.y0 < vb[1] || bx.y1 > vb[1] + vb[3]);
+    pass &= ok('sector labels fit inside the panel' +
+               (offPanel.length ? ' (' + offPanel.length + ' clipped)' : ''), offPanel.length === 0);
+
+    // The complaint that prompted all of this was labels sitting on the racing
+    // line, and nothing below catches it: a label parked between two numbers is
+    // clear of both and still on the tarmac. So measure the thing the user
+    // actually saw. The floor is a quarter of the label's own width — for this
+    // shape the search achieves k*0.05 or better, so this has real headroom and
+    // still fails loudly if placement ever regresses to the midpoint.
+    let tightest = Infinity, tightAt = '';
+    secLabels.map(lblBox).forEach((bx, i) => {
+      const g = boxRoadGap(bx, 90);
+      if (g < tightest) { tightest = g; tightAt = ' (S' + (i + 1) + ')'; }
+    });
+    pass &= ok('sector labels stand off the road, closest ' + tightest.toFixed(0) + ' units' + tightAt,
+               tightest > Math.max(bb.width, bb.height) * 0.04);
+
+    // Turn numbers. Two failures are worth catching. A stale set: setTrack
+    // rebuilds the group every call, so a build that forgot to clear would leave
+    // the baked numbers sitting under the fetched ones. And a covered glyph: the
+    // numbers and the sector labels are placed independently of each other, so
+    // nothing but this assertion notices when one lands on the other — which is
+    // exactly the bug that prompted the placement search. The boxes are rebuilt
+    // from each element's own attributes rather than from the placement code, so
+    // this checks the result rather than re-running the same arithmetic.
+    // Containment is deliberately not asserted — a number stood off the road can
+    // legitimately poke out of the path's own bbox.
+    const turnEls = Array.from(turnG.children);
+    pass &= ok(turnEls.length + ' turn numbers placed',
+               turnEls.length > 0 && turnEls.length === curTurns.length &&
+               turnEls.every(el => Number.isFinite(Number(el.getAttribute('x'))) &&
+                                   Number.isFinite(Number(el.getAttribute('y')))));
+
+    // Every label on the map against every other: numbers vs sector labels, and
+    // the sector labels against each other, since those are now placed by a
+    // search that only sees the ones already down and a bad ordering could still
+    // stack two of them.
+    const secBoxes = secLabels.map(lblBox);
+    let worst = Infinity, worstAt = '';
+    const note = (g, what) => { if (g < worst) { worst = g; worstAt = what; } };
+    for (const t of turnEls.map(lblBox))
+      for (const s of secBoxes)
+        note(bGap(t, s), ' (T' + t.t + '/S' + (s.t || '?').slice(1) + ')');
+    for (let i = 0; i < secBoxes.length; i++)
+      for (let j = i + 1; j < secBoxes.length; j++)
+        note(bGap(secBoxes[i], secBoxes[j]), ' (S' + (i + 1) + '/S' + (j + 1) + ')');
+    pass &= ok('labels stay clear of each other, closest ' + worst.toFixed(0) + ' units' + worstAt,
+               worst > 0);
+
+    // The START label is the one that broke: its anchor is now chosen by search,
+    // and a search that finds nothing falls back to a clamped nudge. Both paths
+    // must land inside the viewBox — an anchor outside it is clipped, which is
+    // exactly how this was first noticed ("START" rendering as "STAR"). Tested
+    // against the viewBox edge itself, not an invented margin, because the box
+    // the search fits is the bbox plus pad and an anchor may legitimately sit on
+    // that boundary.
+    const lx = Number(startLabel.getAttribute('x')), ly = Number(startLabel.getAttribute('y'));
+    const inVB = vb.length === 4 && vb.every(Number.isFinite) &&
+                 Number.isFinite(lx) && Number.isFinite(ly) &&
+                 lx >= vb[0] && lx <= vb[0] + vb[2] &&
+                 ly >= vb[1] && ly <= vb[1] + vb[3];
+    pass &= ok('START label anchor lands inside the viewBox', inVB);
+  }
+
+  console.log('%cDriver mock self-check', 'font-weight:bold');
+  console.log(log.join('\n'));
+  console.log(pass ? '%cALL PASS' : '%cFAILURES ABOVE', 'color:' + (pass ? 'green' : 'red'));
+  if (!pass) document.querySelector('.mockbadge').textContent = 'SELF-CHECK FAILED';
+  return pass;
+}
+
+function wantCheck() {
+  return new URLSearchParams(location.search).get('selfcheck') === '1';
+}
+
+if (wantCheck()) selfCheck();
+
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

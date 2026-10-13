@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+
+{% block scripts %}
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
+        <script type="text/javascript">
+           var rmqusername ='{{ data.rmqusername }}'
+           var rmqpassword ='{{ data.rmqpassword }}'
+           var hometrack = '{{ data.hometrack }}'
+           var gameversion = '{{ data.packetformat }}'
+        </script>
+        <script src="{{ url_for('static', filename= 'js/f1utils.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<h2 id="graphtitle"> {% block title %} LiveLaps Telemetry {% endblock %}</h2>
+
+<div class="dash"><label class="switch"><input type="checkbox" id="sw_console" onclick="consoleSwitch()"><span class="slider round"></span></label></div>
+<div class="dash" id="message">Data Connection</div>
+
+<div class="grid-container">
+    <div>
+        <svg class="rpm progress_bar" xmlns="http://www.w3.org/2000/svg" height="40" width="300" viewBox="0 0 330 40">
+            <defs>
+              <pattern id="bar_pat1" patternUnits="userSpaceOnUse" width="5" height="24" patternTransform="rotate(30)">
+                <line x1="0" y="0" x2="0" y2="24" stroke="#4a4" stroke-width="7"/>
+              </pattern>
+              <pattern id="bar_pat2" patternUnits="userSpaceOnUse" width="5" height="24" patternTransform="rotate(30)">
+                <line x1="0" y="0" x2="0" y2="24" stroke="#679EA4" stroke-width="7"/>
+              </pattern>
+              <pattern id="bar_pat3" patternUnits="userSpaceOnUse" width="5" height="24" patternTransform="rotate(30)">
+                <line x1="0" y="0" x2="0" y2="24" stroke="#d00" stroke-width="7"/>
+              <pattern id="bar_pat4" patternUnits="userSpaceOnUse" width="5" height="20">
+                <line x1="0" y="0" x2="0" y2="24" stroke="#fff" stroke-width="8"/>
+              </pattern>
+              <pattern id="flag_bw" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(10)">
+                <line x1="0" y="0" x2="0" y2="7" stroke="#000000" stroke-width="2" />
+                <line x1="0" y="0" x2="0" y2="7" stroke="#ffffff" stroke-width="5" />
+              </pattern>
+            </defs>
+            <rect class="bg" fill="url(#bar_pat1)" x="0" y="0" height="40px" width="80px"/>
+            <rect class="bg2" fill="url(#bar_pat2)" x="80" y="0" height="40px" width="210px"/>
+            <rect class="bg3" fill="url(#bar_pat3)" x="290" y="0" height="40px" width="50px"/>
+            <path class="meter" id="rev" fill="none" stroke="#cbb" stroke-opacity="0.90" stroke-width="25px" d="M0,19 h340" stroke-dasharray="340" stroke-dashoffset="0"/>
+          </svg>
+        <svg class="pedals progress_bar" xmlns="http://www.w3.org/2000/svg" height="200" width="250" viewBox="0 0 200 250">
+            <path class="bg" stroke="url(#bar_pat2)" d="M26,169 A80,80 0 1 1 155,72" fill="none"/>
+            <path class="bg2" stroke="url(#bar_pat3)" d="M155,72 A80,80 0 0 1 155,169" fill="none"/>
+            <path class="meter s1_acc" id="acc" stroke="#ccc" stroke-opacity="0.9" d="M26,169 A80,80 0 1 1 155,72" fill="none" stroke-dasharray="255" stroke-dashoffset="0"/>
+            <path class="meter s1_br" id="br" stroke="#ccc" stroke-opacity="0.9" d="M155,72 A80,80 0 0 1 155,169" fill="none" stroke-dasharray="105" stroke-dashoffset="0"/>
+            <text stroke="none" style="outline-style: none;" id="s1_speed" stroke-width="1px" x="90px" y="130px" dominant-baseline="middle" text-anchor="middle" text-rendering="geometricPrecision" font-family="livetiming" fill="var(--f1-timing-yellow)" font-size="48px" transform="" text-anchor="middle">PIT</text>
+            <text stroke="none" style="outline-style: none;" stroke-width="1px" x="90px" y="160px" dominant-baseline="middle" text-anchor="middle" text-rendering="geometricPrecision" font-family="livetiming" fill="var(--f1-timing-yellow)" font-size="18px" transform="" text-anchor="middle">km/h</text>
+        </svg>
+        <br />
+        <p class="dash small">Gear:<div id="s1_gear" class="telemetry digits med dw_sngle txt-gry">N</div> 
+        <span>Lap:</span><div id="s1_lap" class="digits med dw_sngle txt-gry">-</div>
+        <span>Sector:</span><div id="s1_sec" class="digits dw_sngle med txt-gry">-</div></p>
+        <img id="wheel" src="/static/images/F1Wheel.svg" height="100px">
+    </div>
+    <div>
+        <p class="dash small">Current Lap</p> <div id="s1_clap" class="timing med">0.0</div><br />
+        <p class="dash small">Best Lap</p> <div id="s1_blap" class="timing med">0.000</div><br />
+        <p class="dash small">Last Lap</p> <div id="s1_llap" class="timing med">0.000</div><br />
+        <p class="dash small">S1:</p> <div id="s1_s1" class="dash timing small timing_yel">00.000</div> <br />
+        <p class="dash small">S2:</p> <div id="s1_s2" class="dash timing small timing_yel">00.000</div> <br />
+        <p class="dash small">S3:</p> <div id="s1_s3" class="dash timing small timing_yel">00.000</div> <br /><br />   
+        <p class="dash small" id="info">Engine<div id="info_data" class="small">Starting</div></p>
+    </div>
+    <div class="trackmap">Circuit<br /><br />
+      <div class="mflex-item" id="map">
+          <svg id="s2" class="track" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMid meet" height="250" width="500" viewBox="-1000 -200 2200 300"></svg>
+      </div>
+      <br /><br />
+      <p class="dash small"><span id="track_info">Waiting for a session</span><br />
+      <div id="track_detail" style="visibility: hidden;">
+        <span>Lap Record: </span><div id="lap_record" class="dash timing timing_yel"></div><br />
+        <span>Distance: </span><div id="track_len" class="dash timing timing_yel"></div>
+      </div>
+      </p>
+      <div> 
+      <svg id="bw_flag" visibility="hidden" width="60" height="80" viewBox="0 0 240 320" fill="none" xmlns="http://www.w3.org/2000/svg"><g stroke-width="2"><path stroke="#000" fill="#fff" d="M90 35h160v100H90V35z" transform="rotate(12)"/><path fill="#000" d="m90 135 159-99 1 99H90Z" transform="rotate(12)"/><path stroke="#000" stroke-width="7" stroke-linecap="round" d="M89 250V30" transform="rotate(12)"/></g></svg>
+      <div id="loader" class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<br /><br /><br /><br /><br /><br /><br />
+<svg height="240" width="1300" id="chart" visibility="hidden">
+  <rect x="50" y="0" width="1250" height="240" style="fill:#ddd;stroke:#000;stroke-width:3"></rect>
+  <polyline points="0, 0 0,5" style="fill:none;stroke:#000;stroke-width:3" />
+</svg>
+<script src="{{ url_for('static', filename= 'js/telemetrySVG.js') }}"></script>
+
+{% endblock %}

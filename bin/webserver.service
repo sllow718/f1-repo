@@ -1,0 +1,14 @@
+[Unit]
+Description=F1Sim WebServer
+After=network-online.target
+ 
+[Service]
+ExecStart=/home/pi/Desktop/f1-v6/bin/run_webserver.sh
+WorkingDirectory=/home/pi/Desktop/f1-v6
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+ 
+[Install]
+WantedBy=multi-user.target

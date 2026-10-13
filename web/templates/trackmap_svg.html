@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block scripts %}
+    <script type="text/javascript">
+        var hometrack = '{{ data.hometrack }}'
+        var gameversion = '{{ data.packetformat }}'
+     </script>
+{% endblock %}
+
+{% block content %}
+
+    <h2 id="graphtitle"> {% block title %} {{ data.hometrack }} Track Layout {% endblock %}</h2>
+    <div class="mcontainer" id="mapper">
+        <div class="mfixed">
+            <div id="track_id" class="graph-hdg">&nbsp;</div>
+            <div id="track_co" class="graph-title">&nbsp;</div>
+            <div id="flag"></div>
+        </div>
+        <div class="trackmap">
+            <div class="mflex-item" id="map">
+                <svg id="s2" class="track" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMid meet" height="400" width="1000" viewBox="-1000 -200 1 1000"></svg>
+            </div>
+            <br /><br />
+            <div id="track_detail" style="visibility: hidden; text-align: center;">
+              <div id="track_info" class="dash timing timing_yel"></div><br />
+              <span>Lap Record: </span><div id="track_f1lr" class="dash timing timing_yel"></div><br />
+              <span>Distance: </span><div id="track_len" class="dash timing timing_yel"></div>
+            </div>
+            </p>
+            <div id="loader" class="spinner"></div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename= 'js/trackmap_svg.js') }}"></script>
+
+{% endblock %}

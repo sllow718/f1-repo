@@ -1,0 +1,130 @@
+# Unique game host representing the APEX leaderboard
+gamehost: "<GAME_HOST>"
+# Unique device name (scoped to the game host)
+devicename: "<DEVICE_NAME>"
+# F1 game version (also to match the packet format defined in the telemetry options)
+# valid values are [ 2021 | 2022 | 2023 ]
+# these can be comma-delimited if needs to support different versions
+version: "<VERSION>"
+
+# store: [ none | oracledb | local | rabbitmq ]
+# use none value for the store config if not wanting to save the data (but have an end-point and console debugging only)
+# use rabbitmq value for the store config if wanting to introduce Store And Forward
+store: local
+# forward: [ none | oracledb | local ]
+# use none value for the forward config if not wanting to save the data directly
+# otherwise will read from rabbitmq (only) and forward to oracledb or local
+forward: none
+save: true
+filter: true
+
+# Localisation
+# Set these based on the country or local track for the demo
+# NB: leaderboard is the APEX app. Leave runningguide as default unless a customised version is required
+# Set hometrack will retrieve a Reference Lap for the Circuit Display
+# Fro hometrack refer to the lib/telemetry_f1_<VERSION>/packets.py file for list of valid TRACKS
+hometrack: "<HOMETRACK>"
+leaderboard: https://livelaps.withoracle.cloud
+registration: https://livelaps.withoracle.cloud/registration
+runningguide: https://livelaps.withoracle.cloud/running-guide
+# Following APIs are current in development. These are not in use.
+trackapi: ""
+sessionapi: ""
+
+rabbitmq:
+  fullclassname: f1sim_rabbitmq.RabbitMQProducer
+  properties:
+    host: "localhost"
+    rmqusername: "<RMQ_USER>"
+    rmqpassword: "<RMQ_PASS>"
+    lapdata_info: "lap"
+    laptimedata_info: "laptime"
+    motiondata_info: "motion"
+    motionexdata_info: "motionex" 
+    sessiondata_info: "session"
+    telemetrydata_info: "telemetry"
+    testdata_info: "test"
+
+oracledb:
+  fullclassname: f1sim_oracledb.OracleDatabaseConnection
+  properties:
+    # dbmode: [ thin | thick ]
+    # thick mode applies the use of the Oracle Instant Client
+    # behaviour experienced with thin mode failing to connect to ADB
+    dbmode: "thick"
+    dbusername: "<dbusername>"
+    dbpassword: "<dbpassword>"
+    dburl: "<tnsprofile_low>"
+    # additional wallet parameters only required for thin mode
+    dbwalletdir: "<dbwalletdir>"
+    dbwalletpassword: "<dbwalletpassword>"
+    # scale up or down the consumer threads required for performance
+    poolsize: 4
+    # level: [ all | laptime ]
+    # use all value to consume all packets; use laptime to consume only session and laptime (for APEX leaderboard)
+    level: "all"
+    # data SQL insert statements (required UPSERT procedures installed)
+    lapdata_info: "BEGIN UPSERT_LAPDATA(JSON_VALUE(:body,'$.m_devicename'),JSON_VALUE(:body,'$.m_gamehost'),JSON_VALUE(:body,'$.m_session'),:body); END;"
+    laptimedata_info: "BEGIN UPSERT_LAPTIME(JSON_VALUE(:body,'$.m_devicename'),JSON_VALUE(:body,'$.m_gamehost'),JSON_VALUE(:body,'$.m_session'),:body); END;"
+    motiondata_info: "BEGIN UPSERT_MOTION(JSON_VALUE(:body,'$.m_devicename'),JSON_VALUE(:body,'$.m_gamehost'),JSON_VALUE(:body,'$.m_session'),:body); END;"
+    motionexdata_info: "BEGIN UPSERT_MOTION(JSON_VALUE(:body,'$.m_devicename'),JSON_VALUE(:body,'$.m_gamehost'),JSON_VALUE(:body,'$.m_session'),:body); END;"
+    sessiondata_info: "BEGIN UPSERT_SESSION(JSON_VALUE(:body,'$.m_devicename'),JSON_VALUE(:body,'$.m_gamehost'),JSON_VALUE(:body,'$.m_session'),:body); END;"
+    telemetrydata_info: "BEGIN UPSERT_TELEMETRY(JSON_VALUE(:body,'$.m_devicename'),JSON_VALUE(:body,'$.m_gamehost'),JSON_VALUE(:body,'$.m_session'),:body); END;"
+    testdata_info: "BEGIN UPSERT_DEVICE(:body); END;"
+
+local:
+  fullclassname: f1sim_local.FileWriter
+  properties:
+    # filetype supported either pickle or bytes
+    filetype: "pickle"
+    filedir: "test/data"
+    lapdata_info: "lap"
+    laptimedata_info: "laptime"
+    motiondata_info: "motion" 
+    motionexdata_info: "motionex" 
+    sessiondata_info: "session"
+    telemetrydata_info: "telemetry"
+    testdata_info: "test"
+
+oss:
+  fullclassname: f1sim_oss.OSSWriter
+  properties:
+    bs_server: "<streampool_endpoint:9092>"
+    ossusername: "<tenancy_name>/<broker_username>/<streampool_ocid>"
+    osspassword: "<broker_token>"
+    poolsize: 1
+    lapdata_info: "lapdata"
+    laptimedata_info: "laptime"
+    motiondata_info: "motion"
+    motionexdata_info: "motionex" 
+    sessiondata_info: "session"
+    telemetrydata_info: "telemetry"
+    testdata_info: "test"
+
+udp:
+  fullclassname: f1sim_udp.UDPWriter
+  properties:
+    host: "<udp_host>"
+    port: 20777
+    lapdata_info: "lap"
+    laptimedata_info: "laptime"
+    motiondata_info: "motion"
+    motionexdata_info: "motionex" 
+    sessiondata_info: "session"
+    telemetrydata_info: "telemetry"
+    testdata_info: "test"
+
+remote:
+  # whether to start the remote session on boot (or after config change)
+  autostart: true
+  # host
+  sshhost: "services.withoracle.cloud"
+  # user
+  sshuser: "pi"
+  # key file
+  sshkeyfile: "/home/pi/f1-simulator/.ssh/rdm-pi-bastion"
+  # port mappings
+  # ssh - 22
+  # webserver - 8080
+  # rabbitmq-admin - 15672
+  # rabbitmq-mqtt - 15675

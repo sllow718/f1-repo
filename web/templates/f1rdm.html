@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2>{% block title %} Remote Device Management Admin {% endblock %}</h2>
+    <div class="container">
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-6">
+          <button class="btn btn-lg btn-primary" onClick="parent.location='/rdm/admin'">Refresh</button>&nbsp;
+          <button class="btn btn-lg btn-primary" onClick="parent.location='/about'">Back To Help</button>
+        </div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-6">Control the Remote Session Access</div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-12">
+          <button class="btn btn-md btn-primary" onClick="parent.location='/rdm/control'">{{ remotebtn }} </button>
+          {% if (remotebtn == "Stop RDM Session") %}
+            &nbsp;
+            Current Port Segment: <span class="txt-gry">{{ remoteportsegment }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-12">Generate SSH keys (and download new SSH public key). This is used by the PI to ssh into the remote compute instance. Copy the public key to the remote compute and install in the user's ~/.ssh/authorized_keys file. Configure the sshuser and sshhost in the yaml configuration with the remote user and compute instance hostname or IP address.</div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-4">
+          <button class="btn btn-md btn-primary" onClick="parent.location='/rdm/genlocal'">Gen New PI Keys</button>
+        {% if rdm_checklocalkey %}
+          &nbsp;
+          <button class="btn btn-md btn-primary" onClick="parent.location='/rdm/getlocal'">Get PI Pub Key</button>
+        {% endif %}
+        </div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-12">Add Public SSH key. This is used by the remote compute instance to ssh into the PI. Paste the public key into the field and Add Key. NB: Each user can add their own SSH public key. NB: Adding a new key with the same user will replace the previous key.</div>
+      </div>
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <form action="{{ url_for('rdm_addremotekey') }}" method="POST">
+        <div class="row">
+          <div class="col-md-9"><input class="form-control" type="text" name="storetxt"/></div>
+          <div class="col-md-3"><input type="submit" value="Add Key" class="btn btn-md btn-primary"/>&nbsp;
+            <button type="button" class="btn btn-md btn-primary" onClick="parent.location='/rdm/removeremote'">Remove Key</button>
+          </div>
+        </div>
+        <div class="row">
+          {% if rdm_checkremotekey %}
+          <div class="col-md-12">Status: SSH Key Exists.</div>
+          {% else %}
+          <div class="col-md-12">Status: SSH Key Does Not Exist.</div>
+          {% endif %}
+        </div>
+        </form>
+      </div>
+      {% if (remotebtn == "Stop RDM Session") %}
+      <div class="d-grid gap-2">&nbsp;</div>
+      <div class="row">
+        <div class="col-md-12">Use the following syntax to connect to the PI from your remote compute instance. Use your PI User and SSH Key configured.</div>
+        <div class="d-grid gap-1">&nbsp;</div>
+        <div class="col-md-12">ssh -i ~/.ssh/id_rsa -p {{ remoteportsegment + 22 }} pi@localhost</div>
+        <div class="d-grid gap-1">&nbsp;</div>
+        <div class="col-md-12">Use the following syntax to forward ports to the PI from your local machine connected through your remote compute instance. Use your remote compute instance and SSH Key configured.</div>
+        <div class="d-grid gap-1">&nbsp;</div>
+        <div class="col-md-12">ssh -i ~/.ssh/id_rsa -L 0.0.0.0:2222:0.0.0.0:{{ remoteportsegment + 22 }} -L 0.0.0.0:8080:0.0.0.0:{{ remoteportsegment + 80 }} -L 0.0.0.0:15672:0.0.0.0:{{ remoteportsegment + 72 }} -L 0.0.0.0:15675:0.0.0.0:{{ remoteportsegment + 75 }} opc@ocicompute.withoracle.cloud</div>
+      </div>
+      {% endif %}
+    </div>
+{% endblock %}

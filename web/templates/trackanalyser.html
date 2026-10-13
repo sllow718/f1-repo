@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block scripts %}
+    <script type="text/javascript">
+        var hometrack = '{{ data.hometrack }}'
+        var gameversion = '{{ data.packetformat }}'
+        var gamehost = '{{ data.gamehost }}'
+    </script>
+    <script src="{{ url_for('static', filename= 'js/f1utils.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+
+    <h2 id="graphtitle"> {% block title %} Lap Analyser for {{data.gamehost}}{% endblock %}</h2>
+    <div class="mcontainer" id="mapper">
+        <div class="mfixed">
+            <div id="track_id" class="graph-hdg">&nbsp;</div>
+            <div id="track_co" class="graph-title">&nbsp;</div>
+            <br /><br />
+            <div id="switches">
+                <button id="rl" onclick="btn_racing()">Racing Line</button>
+                <button id="bcomp" style="visibility: hidden;" onclick="btn_comp()">Comparison Lap</button>
+                <button id="brefl" style="visibility: hidden;" onclick="btn_ref()">Reference</button>
+                <br />
+                <button id="bzoom-" onclick="btn_zoom(-1)">&lt;</button>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16">
+                    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                  </svg>&nbsp;Turn&nbsp;
+                <button id="bzoom" onclick="btn_zoom(1)">&gt;</button>
+                <br />
+                <button id="mzoom-" onclick="zoomIn()">-</button>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16">
+                    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                  </svg>&nbsp;Zoom&nbsp;
+                <button id="mzoom" onclick="zoomOut()">+</button>
+                <button id="mreset" onclick="zoomReset()">Reset Zoom</button>
+            </div>
+
+        </div>
+        <div class="trackmap">
+            <div class="mflex-item" id="map">
+                <svg id="s2" class="track" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMid meet" height="400" width="1000" viewBox="-1000 -200 1 1000"></svg>
+            </div>
+            <div id="loader" class="spinner"></div>
+        </div>
+        <div class="mfixed">
+            <div id="container"></div>
+            <div id="complap" class="small title-white" style="visibility: hidden;">Comparison Lap <br />
+                <span class="graph-title">Lap time:</span> <span class="timing med timing_yel" id="lt">0:00.000</span><br />
+                <span class="graph-title">Sector 1:</span>  <span class="timing small timing_yel" id="sec1">0.000</span><br />
+                <span class="graph-title">Sector 2:</span>  <span class="timing small timing_yel" id="sec2">0.000</span><br />
+                <span class="graph-title">Sector 3:</span>  <span class="timing small timing_yel" id="sec3">0.000</span><br/>
+                <span id="invalid" class="small title-white" style="visibility: hidden;">Invalid</span>
+            </div>
+            <div id="turn" class="small title-white" style="visibility: hidden;">Turn Data<br />
+                <span class="graph-title">Sector </span> <span class="graph-title" id="sect">-</span><br />
+                <span class="graph-title">Avg Sector Speed:</span>  <span class="timing small timing_yel" id="avssp">0</span><br/>
+                <span class="graph-title">Turn </span>  <span class="graph-title" id="turn_title">0</span><br/>
+                <span class="graph-title">Average Speed:</span>  <span class="timing small timing_yel" id="avsp">0</span><br />
+                <span class="graph-title">Max Speed:</span>  <span class="timing small timing_yel" id="mxsp">0</span><br />
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename= 'js/trackanalyser.js') }}"></script>
+
+{% endblock %}

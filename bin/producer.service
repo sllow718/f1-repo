@@ -1,0 +1,15 @@
+[Unit]
+Description=F1Sim Producer
+After=network.target network-online.target rabbitmq-server.service sshd.service
+Wants=network-online.target
+ 
+[Service]
+ExecStart=/home/pi/Desktop/f1-v6/bin/run_producer.sh
+WorkingDirectory=/home/pi/Desktop/f1-v6
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+ 
+[Install]
+WantedBy=multi-user.target

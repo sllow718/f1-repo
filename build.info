@@ -1,0 +1,6 @@
+GIT_REPO=f1-simulator
+GIT_BRANCH=dev
+GIT_SUMMARY=commit 4dc62eaca7a1790436d1280d32b7a7be35973f9d Author: Jason Lowe <jason.lowe@oracle.com> Date: Fri Oct 6 00:13:23 2023 +0100 added logic to create a warning for data packets that are different from structures fix lapdata as there was a misalignment
+BUILD_ID=2023-10-05_23-15-45
+BUILD_NUMBER=23
+TAG=v6_0_0

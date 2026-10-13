@@ -1,0 +1,29 @@
+# Secrets / credentials
+.f1sim_secret
+.ssh/
+f1store.yaml
+f1env.sh
+Wallet_f1simdb/
+newWallet_f1simdb/
+*Wallet_f1simdb*.zip
+*.pem
+*.key
+*.p12
+*.sso
+.env*
+
+# Oracle client binaries
+instantclient_19_10/
+instantclient-*.zip
+
+# Local DB, logs, env, caches
+web/instance/
+*.db
+*.log
+dev/
+__pycache__/
+*.pyc
+.playwright-mcp/
+.claude/
+.codex/
+.agents/

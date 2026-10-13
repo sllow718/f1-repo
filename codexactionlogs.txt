@@ -1,0 +1,715 @@
+# Codex Action Logs
+
+This file is the persistent action log for Codex changes in this folder. Each entry should describe what changed, why it changed, what the previous state was, what the new state is, and what verification was run.
+
+## 2026-06-17 20:12:47 +08
+
+Action: Created `AGENTS.md`.
+
+Files changed:
+- `AGENTS.md`
+
+Reason:
+- Add durable Codex instructions for this repository so future work preserves the originally working codebase and avoids unnecessary changes.
+
+Previous state:
+- No root `AGENTS.md` file existed in `/home/pi/Desktop/f1-v6`.
+
+New state:
+- Added repository context for the F1 simulator/telemetry project.
+- Added rules to make the smallest practical change, preserve existing behavior, avoid broad refactors, avoid deleting files, avoid overwriting settings, protect secrets and wallets, ask before risky commands, and report before/after details for changes.
+
+Verification:
+- Ran `sed -n '1,240p' AGENTS.md` and confirmed the file content.
+
+Commands intentionally not run:
+- No package installs.
+- No service commands.
+- No RabbitMQ commands.
+- No Oracle DB commands.
+- No wallet setup/update commands.
+- No destructive file commands.
+
+## 2026-06-17 20:20:00 +08
+
+Action: Updated `AGENTS.md` logging requirements and created `codexactionlogs.txt`.
+
+Files changed:
+- `AGENTS.md`
+- `codexactionlogs.txt`
+
+Reason:
+- User clarified that Codex changes should be recorded in a persistent file in this folder, not only in assistant responses.
+
+Previous state:
+- `AGENTS.md` said to "report a specific change log" but did not require a persistent log file.
+- `codexactionlogs.txt` did not exist.
+
+New state:
+- `AGENTS.md` now requires every Codex-created file or folder change in this repository to be appended to `codexactionlogs.txt` in the repository root.
+- `codexactionlogs.txt` was created as the persistent action log and includes entries for the initial `AGENTS.md` creation and this logging-rule update.
+
+Verification:
+- After this edit, run `sed -n '1,260p' AGENTS.md` and `sed -n '1,260p' codexactionlogs.txt` to confirm both files.
+
+Commands intentionally not run:
+- No package installs.
+- No service commands.
+- No RabbitMQ commands.
+- No Oracle DB commands.
+- No wallet setup/update commands.
+- No destructive file commands.
+
+## 2026-07-30 17:09:56 +08
+
+Action: Installed the user-provided replacement Oracle wallet alongside the existing wallet, changed the active Instant Client wallet links, and restarted the Oracle consumer.
+
+Files and folders changed:
+- Created `newWallet_f1simdb/` by extracting `newWallet_f1simdb.zip`.
+- Recreated `instantclient_19_10/network/admin/cwallet.sso`.
+- Recreated `instantclient_19_10/network/admin/sqlnet.ora`.
+- Recreated `instantclient_19_10/network/admin/tnsnames.ora`.
+- Appended this entry to `codexactionlogs.txt`.
+
+Reason:
+- The Oracle consumer was failing with `ORA-29024: Certificate validation failure`.
+- The replacement wallet was validated as belonging to the same `f1simdb` database, the same Singapore region, and the configured `f1simdb_low` service.
+
+Previous state:
+- `newWallet_f1simdb/` did not exist.
+- `instantclient_19_10/network/admin/cwallet.sso` pointed to `/home/pi/Desktop/f1-v6/Wallet_f1simdb/cwallet.sso`.
+- `instantclient_19_10/network/admin/sqlnet.ora` pointed to `/home/pi/Desktop/f1-v6/Wallet_f1simdb/sqlnet.ora`.
+- `instantclient_19_10/network/admin/tnsnames.ora` pointed to `/home/pi/Desktop/f1-v6/Wallet_f1simdb/tnsnames.ora`.
+- The original wallet was downloaded in 2023 and its wallet SSL certificate expiry was recorded as February 2028.
+- Before the wallet replacement, retained service logs showed repeated `ORA-29024` failures and failed Oracle consumer startups.
+
+New state:
+- `newWallet_f1simdb/` contains the files extracted from `newWallet_f1simdb.zip`.
+- The three Instant Client links now point to their corresponding files under `/home/pi/Desktop/f1-v6/newWallet_f1simdb/`.
+- The replacement wallet was downloaded on 2026-07-30 and its wallet SSL certificates expire on 2031-03-26.
+- The original `Wallet_f1simdb/` directory and `newWallet_f1simdb.zip` remain in place and were not modified or deleted.
+- `f1sim-consumer` is active and running with the new wallet.
+
+Commands run:
+- `unzip -tq newWallet_f1simdb.zip` to verify ZIP integrity.
+- Read-only checks compared the old and new TNS hosts, service names, region, configured alias, and wallet credential hashes.
+- `bin/setup_wallet.sh -d /home/pi/Desktop/f1-v6 -w /home/pi/Desktop/f1-v6/newWallet_f1simdb.zip -f`
+- Read-only SHA-256 comparisons verified that extracted `cwallet.sso`, `sqlnet.ora`, `tnsnames.ora`, `ewallet.pem`, and `README` exactly match the ZIP contents.
+- `readlink -f` checks verified all three active links resolve into `newWallet_f1simdb/`.
+- A SHA-256 check verified the preserved original `Wallet_f1simdb/cwallet.sso` remained unchanged.
+- `sudo rabbitmqctl list_queues name messages messages_ready messages_unacknowledged consumers` before and after the restart.
+- `sudo systemctl restart f1sim-consumer`
+- `systemctl show f1sim-consumer --property=ActiveState --property=SubState --property=MainPID --property=NRestarts --property=ExecMainStatus --property=ExecMainStartTimestamp --no-pager`
+- `journalctl -u f1sim-consumer --since '2026-07-30 17:13:20' --no-pager --grep='Connection successful|ORA-29024|Consumer Heartbeat Record Inserted|Starting listener|Registered as|ERROR|Started|Stopped'`
+
+Verification results:
+- The service restart completed successfully.
+- `f1sim-consumer` reported `ActiveState=active`, `SubState=running`, `NRestarts=0`, and `ExecMainStatus=0`.
+- The consumer logged `Connection successful` at 2026-07-30 17:13:29 +08.
+- Ten RabbitMQ listeners started and the `PacketData` queue reported 10 consumers.
+- Consumer heartbeat records were successfully inserted at 17:14, 17:15, and 17:16.
+- No `ORA-29024` or other matching error appeared in the post-restart journal check.
+- Before and after the explicit restart, `PacketData` had 0 total, ready, and unacknowledged messages, confirming the queue was drained.
+
+Change-log ordering correction:
+- The first patch inserted this July entry between the two existing June entries because it matched repeated footer text.
+- The entry was moved after both June entries so `codexactionlogs.txt` remains chronological; no earlier entry content was changed.
+
+Rollback:
+- Repoint the three Instant Client links to the corresponding files in `/home/pi/Desktop/f1-v6/Wallet_f1simdb/`.
+- Restart only `f1sim-consumer`.
+- The old wallet was preserved specifically to keep this rollback available.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No application source, YAML configuration, environment, database schema, producer, webserver, or APEX changes.
+- No original wallet or wallet ZIP files were deleted or overwritten.
+- No services other than the explicitly approved `f1sim-consumer` were restarted.
+
+## 2026-09-10 (Windows working copy)
+
+Action: Created a new self-contained mock driver-telemetry dashboard page.
+
+Files changed:
+- Created `web/static/mock-driver.html`
+
+Reason:
+- User requested a new mock UI for the available telemetry data, to run on Linux as a separate webpage similar to LiveLaps. Confirmed through brainstorming that it should use simulated (not live) data and show a single-car driver dashboard.
+
+Previous state:
+- `web/static/mock-driver.html` did not exist.
+- No mock or simulated-data page existed anywhere in the project.
+- `web/static/` contained only `css/` and `js/` subdirectories.
+
+New state:
+- Added one self-contained HTML file with inline CSS and JS. It has no server-side dependency, reads no configuration, and connects to nothing.
+- It is served automatically by the existing Flask app because `create_app()` uses `app = Flask(__name__)` (`web/app.py:54`) with no `static_folder` override, so everything under `web/static/` is already exposed at `/static/`. No route, template, Python, or CSS file was added or modified, and no service restart is required.
+- Reachable at `http://<pi-ip>:8080/static/mock-driver.html`, or by opening the file directly in a browser.
+- Simulates a flying lap of Marina Bay (the configured `hometrack: Singapore`) using a 19-corner table over a 4,940 m lap. A speed profile is solved once at load by clamping corner apex speeds and then relaxing backwards (braking, 32 m/s^2) and forwards (traction, speed-tapered from 11 m/s^2). Speed, gear, RPM, throttle, brake, steering, g-forces, tyre temperatures and pressures and sector times are all derived from that single profile, so the displayed values cannot contradict each other.
+- Resulting simulated lap time is 1:35.119 with a 316.1 km/h top speed, which is in the region of a real Singapore race-pace lap.
+- Includes a `?selfcheck=1` assert-based self-check with no framework dependency.
+
+Verification:
+- Ran the page's own self-check in Node v22 by extracting the real `<script>` block and stubbing the DOM, via a throwaway harness at `C:/Users/mingfu/AppData/Local/Temp/f1mockcheck.mjs` (deliberately outside the repository).
+- All 17 checks passed: profile length, lap time in the sane band, never exceeds V_MAX, never stalls, all values finite, braking never exceeds A_BRAKE, traction never exceeds A_ACCEL, all 19 apexes reachable, main straight has throttle pinned with no brake in top gear, hairpin below 100 km/h in a low gear, never on throttle and brake together, lateral g stays physical, never stops on track, and gears 2-8 all used.
+- The initial run failed and caught two real defects, both fixed before completion: the constant-acceleration model pinned the car at V_MAX for the whole main straight with throttle reading zero, and the trace polyline stretched then compressed as its ring buffer filled.
+- One further failure ("all 8 gears used") was investigated with a gear histogram and determined to be an incorrect assertion rather than a code defect: minimum speed on the lap is 86 km/h at the T13 hairpin, a 2nd-gear corner, so 1st gear is correctly never used on a flying lap. The assertion was corrected to expect gears 2-8 and to document why.
+- The simulated page was not opened in a browser as part of this verification.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No existing file was modified or deleted; the change is purely additive.
+
+## 2026-09-10 (Windows working copy)
+
+Action: Added live car-position tracking along the circuit to the mock dashboard.
+
+Files changed:
+- Modified `web/static/mock-driver.html` (additive; the only file touched)
+
+Reason:
+- User requested live tracking of the car's location along the circuit as it moves.
+
+Previous state:
+- `web/static/mock-driver.html` simulated speed, gear, RPM, throttle, brake, steering, g-forces, tyres and sector times from a distance-based lap profile, but displayed no circuit and no car position.
+- The project already implements this feature for the real dashboard: `web/static/js/trackmap_svg.js` fetches the circuit from `https://apigw.withoracle.cloud/livelaps/trackmap/<track>/<version>` and `web/static/js/telemetrySVG.js:243-247` places the car with `rot(telemetry.m_worldPosX, telemetry.m_worldPosY)`.
+- That approach was not reusable here: it positions the car from the telemetry packet's own world coordinates, which share a coordinate space with the SVG path. The mock generates a distance-based model and has no world coordinates.
+
+New state:
+- Added a full-width `Circuit` panel containing an inline `<svg>` with a `<path id="circuit">` and a `<circle id="car">`.
+- The car is positioned by ARC LENGTH rather than world coordinates: `circuit.getPointAtLength(dist / LAP_LEN * circuit.getTotalLength())` via `trackPoint()`. Both the dot and the speed readout therefore derive from the same `dist` value and cannot drift apart.
+- The circuit geometry is fetched at load from the same trackmap endpoint `trackmap_svg.js` uses. The viewBox is fitted from the path's own `getBBox()` rather than from the API's `SVG_VIEWBOX`, and stroke-width and car radius are scaled from that bounding box (2.4% and 3.0% of its longest side).
+- If the fetch fails, or returns a payload that is not a usable path, or throws while being measured, `useTrack()` falls back to a hand-drawn closed path baked into the file (`TRACK_D`), so the panel never renders empty. All routes share one positioning code path.
+- The existing `?selfcheck=1` self-check gained five map assertions and is re-run after the fetched geometry replaces the fallback, so the geometry that actually ships is validated rather than only the fallback. The self-check now contains 22 assertions.
+- Added a lap-distance readout (`810 m` style) and a track-name label beside the panel heading.
+
+Verification:
+- Extended the throwaway Node v22 harness at `C:/Users/mingfu/AppData/Local/Temp/f1mockcheck.mjs` (deliberately outside the repository) to run the page's real `<script>` against five fetch outcomes: API unreachable, real `TRACK_SVG` payload, payload that is not a path, path string that throws when measured, and HTTP 500. All five kept a valid track, ran the self-check, and passed. The real-payload run confirmed the self-check re-ran against the fetched geometry.
+- Verified in a real browser (Chromium via Playwright) against a temporary local `python -m http.server` on 127.0.0.1:8899, which was stopped afterwards. This covered what the Node harness cannot: native SVG path walking and real `getBBox()`.
+- In the browser the API fetch SUCCEEDED and the real Marina Bay path was loaded, not the fallback. The self-check ran twice, first on the fallback (1955 units) then on the real geometry (5042 units), passing all 22 assertions both times.
+- The real path measures 5042 units against the API's own `TRACK_DETAIL.TRACK_LENGTH` of 5063 m, i.e. within 0.4%. This independently confirms the arc-length mapping is physically correct.
+- Scaling was cross-checked against the production dashboard: normalised to a 1000-unit viewBox, the computed stroke-width and car radius are 24.0 and 30.0, which match the values hard-coded in `trackmap_svg.js:75` and `telemetrySVG.js:345` exactly.
+- Confirmed the car moves: sampled position over 2.4 s advanced ~110 m along the path, and the self-check asserts across the whole lap that the dot never leaves the circuit bounds and never freezes.
+- Layout defect found and fixed during browser verification: with a fixed 300 px height the box aspect was 3.08 against the track's 1.49, so `preserveAspectRatio` fitted the shape by height and it used only 447 px of a 922 px width. Changed `#map` to `aspect-ratio:3/2`, after which the shape uses 918 px of 922 px (99.5%) and still fits entirely.
+- Two assertions in the Node harness initially read the wrong DOM element (`viewBox` off the `<path>` instead of the `<svg>`, and the track label off the map instead of `#trackname`). These were test defects, not code defects, and were corrected in the harness rather than by changing the page.
+
+Known limitations, recorded rather than hidden:
+- The Node harness cannot walk a real SVG path, so its `getPointAtLength` is a square stub. Real path walking is only exercised in the browser run above.
+- The offline fallback shape is angular and its ~13 corners do not line up one-for-one with the 19 corners in the lap model, so offline the dot brakes slightly out of step with the drawn shape. The fetched path lines up far better.
+- `LAP_LEN` remains 4940 rather than the API's 5063. The fraction mapping makes the difference invisible, and re-spacing the 19 corners risked the verified 1:35.119 lap for no visible gain.
+- The browser verification origin was `127.0.0.1:8899`, not the Pi's Flask origin on 8080. The gateway returned permissive CORS headers for that origin, and the real dashboard already calls the same endpoint cross-origin from the browser, so this is expected to behave identically on the Pi but was not tested there.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No existing project file was modified other than `web/static/mock-driver.html` itself; the change is otherwise additive.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point that git cannot follow, so `git status` reports "not a git repository". This is pre-existing and was left untouched.
+
+## 2026-09-10 (Windows working copy) — dashboard relaid out to a 2x2 screen-filling grid
+
+Action:
+- Rearranged `web/static/mock-driver.html` into a grid that fills the viewport with no scrolling, and reduced the dashboard from five panels to three: a 2x2 layout with the speedometer across the top half, the live circuit in the bottom-left quarter, and the lap data in the bottom-right quarter.
+- Removed the throttle/brake/steer trace strips, the g-force widget, and the tyre panel, along with all the state and code that fed them.
+
+Files changed:
+- `web/static/mock-driver.html` (only file changed)
+
+Previous state:
+- The dashboard was a centred column capped at `max-width:960px`, stacked vertically, five panels: speedometer, throttle/brake/steer trace strips, circuit map, a split panel with a g-force dial beside the lap times, and a four-tyre grid. On a 1440 px window it occupied 960 px and left the sides empty; the page scrolled.
+- Panel order in the document was speedometer, traces, circuit, split, tyres.
+- `#circuit` carried `stroke-width:16` as a CSS declaration.
+
+New state:
+- `body{height:100dvh}` with `html,body{overflow:auto}`; `.dash` is `height:100%` and `display:flex;flex-direction:column`. No `max-width` anywhere, so the dash spans the viewport.
+- `.panel{flex:none}` and `.head{flex:1;min-height:0}` give the speedometer the top half. `.bottom{flex:1;display:flex;min-height:0}` holds the two lower panels, each `flex:1` with a divider between them, so each takes one quarter of the screen.
+- The speedometer scales with `clamp()` off viewport height (`clamp(56px,22vh,220px)` for the speed and gear numerals, `clamp(12px,3.2vh,34px)` for the two bars) so it fills its half rather than sitting as a thin strip in a large empty panel.
+- The lap stats are a grid, `repeat(auto-fit,minmax(140px,1fr))`, so they read across the quarter on a wide screen (5 columns at 1920, 4 at 1440, 3 at 1280) and wrap rather than squash on a narrow one.
+- Removed markup: the three `<polyline>` trace strips, the g-force `<svg>` dial, the `<div class="tyres" id="tyres">` grid, and the `.split` wrapper.
+- Removed code: `let tyres`, `let trace`, `const TRACE_N`, `poly()`, `TYRE_POS`, the tyre-load integration block in `step()`, the `trace.*.push` ring buffer, the three `setAttribute('points', …)` calls, the `gdot`/`glat`/`glong` writes, and the four-iteration tyre render loop. The `longG` field was dropped from `sample()` as it had no reader left. `step()` now just returns `sample(dist)`.
+- `latG` was deliberately KEPT in `sample()` despite having no on-screen reader: the self-check asserts it stays under 5.5 g, so it still covers the steering model.
+- Removed the now-unused CSS for `.trace`, `.split`, `.gg`, `.tyres`, `.tyre`, and the old `.times .row` list styling.
+- `#circuit` no longer declares `stroke-width` in CSS. A CSS declaration beats a presentation attribute, so `stroke-width:16` was silently overriding the value `setTrack()` derives from the path's bounding box — the road was drawn at 16 units on a track whose bounding box is ~1443 units wide (about 1.1%) instead of the intended ~2.4%. Removing the CSS declaration lets the derived value apply.
+
+Verification:
+- Re-ran the throwaway Node v22 harness at `C:/Users/mingfu/AppData/Local/Temp/f1mockcheck.mjs` (outside the repository) after the removals. All five fetch branches (API unreachable, real payload, non-path payload, path that throws when measured, HTTP 500) still kept a valid track and passed, and the real-payload run still re-ran the self-check against the fetched geometry.
+- Confirmed by grep that no reference to any removed identifier remains in the file.
+- Verified in Chromium (Playwright MCP) against the local `python -m http.server` on 127.0.0.1:8899 that is still serving `web/static`. All 22 self-check assertions pass, twice — once against the fallback geometry (1955 units) and again after the real API path loads (5042 units). Zero console errors.
+- Measured the layout at five real screen sizes by overriding device metrics (1920x1080, 1440x900, 1366x768, 1280x720, 1024x600). At every size: the speedometer is 51-52% of the viewport height, the circuit panel is 50% of the width, the lap panel is 50%, and there is no overflow in either axis. The lap grid resolved to 5, 4, 4, 3 and 3 columns respectively and stayed within its quarter at 55-121 px tall.
+- Note on tooling: Playwright's `setViewportSize` reported an innerWidth 3x the requested value on this machine, so early screenshots were of a different viewport than intended. The numbers above were taken with `Emulation.setDeviceMetricsOverride` at `deviceScaleFactor:1`, read back from the page in the same call, which is why the viewport sizes quoted are exact.
+
+Known limitations, recorded rather than hidden:
+- The three removed panels (throttle/brake/steer traces, g-force dial, tyre temperatures and pressures) are gone, not hidden. Their generating code was deleted rather than left switched off. If any of them is wanted back it has to be rewritten, except that `sample()` still returns `throttle`, `brake`, `st` and `latG`, so the underlying values are all still available.
+- The circuit panel's quarter is wider than the Marina Bay shape's aspect ratio, so `preserveAspectRatio="xMidYMid meet"` fits the shape by height and some width at the sides of that quarter is unused. Filling it would mean distorting or cropping the track.
+- Below roughly 480x300 CSS px the three regions no longer fit and the page falls back to scrolling (`overflow:auto`), rather than clipping content.
+- The browser verification origin was `127.0.0.1:8899`, not the Pi's Flask origin on 8080, and was not tested on the Pi.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No existing project file was modified other than `web/static/mock-driver.html`.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point that git cannot follow, so `git status` reports "not a git repository". This is pre-existing and was left untouched.
+
+Scratch files created during verification, left in place after a cleanup command was declined:
+- `dash-wide.png`, `dash-wide2.png`, `dash-narrow.png`, `dash-quad.png`, `dash-quad-1440.png`, `quad-1440-true.png`, `true1440.png` and the `.playwright-mcp/` directory in the repository root. These are my own screenshots and console logs, not project files. Safe to delete; not deleted because the removal was declined mid-command.
+
+## 2026-09-10 (Windows working copy) — headline row pinned so the gear no longer drags the RPM bars sideways
+
+Action:
+- Stopped the speedometer's RPM bars and DRS block from moving as the gear and speed change, by giving the two large numerals reserved boxes instead of letting their natural text width drive the flex row.
+- Reported by the user as: "currently as the speed changes, the gear and rpm section gets shifted."
+
+Files changed:
+- `web/static/mock-driver.html` (only file changed)
+
+Previous state:
+- `.head .speed .val` had no reserved box, and `.gear .val` had none either. Both were plain inline numerals, so each was exactly as wide as the glyphs currently in it. `.head` is a flex row, so any change in a child's intrinsic width reflows every sibling after it.
+- `.head .speed .lbl` was unaligned, so "SPEED" sat at the left edge of the speed block while the number was pushed right against `km/h`.
+
+Root cause (measured, not assumed):
+- The Formula1 display webfont has no `tnum` OpenType feature. `font-variant-numeric:tabular-nums` is therefore silently a no-op for it, and every digit has its own width. Measured directly on the rendered face: for the string `1111`, `plain 500.4px` and `tnum 500.4px` — identical, i.e. the feature does nothing. Browsers cannot synthesise tabular figures for a font that lacks them.
+- Digit advance widths at the rendered 198px size: `0`=167.1, `1`=125.1, `2`=137.0, `3`=141.5, `4`=161.7, `5`=140.4, `6`=151.2, `7`=135.7, `8`=148.7, `9`=151.2, and `N`=192.2. That is a spread of up to 67px between `1` and `N`, so the gear box changed width by that much whenever the display switched between them, and pulled the RPM bars and DRS block along with it.
+- An earlier attempt at this had added `tabular-nums` to both numerals and pinned the speed with `min-width:3ch`. That appeared to work only by accident: `ch` is the width of the `0` glyph, which is the widest digit, so `3ch` happens to equal the widest possible three-digit string. The gear had no such box and kept shifting — measured at `span_bars_x: 28.91px` over the run below.
+
+New state:
+- `.head .speed .val` keeps `display:inline-block;min-width:3ch;text-align:right` — now documented as load-bearing rather than incidental.
+- `.gear .val` gained `display:inline-block;min-width:1.2ch;text-align:center`, so the widest gear glyph (`N` at 192.2px) fits without the box ever resizing. `min-width` rather than `width` so an unexpectedly wider glyph grows the box instead of being clipped.
+- `.head .speed .lbl{text-align:right}` so the "SPEED" label sits over the number rather than stranded at the far left of the block.
+- Both rules carry a comment explaining that the Formula1 face has no `tnum` feature and that `ch` is the width of the widest digit, so the next person does not "clean up" the reserved boxes as redundant.
+- `font-variant-numeric:tabular-nums` was left on both numerals. It is a no-op for this font, costs nothing, and keeps the intent legible if the display font is ever swapped for one that has the feature.
+
+Verification:
+- Sampled the rendered layout in Chromium over 640 frames spanning 30s of simulation, covering 0-316 km/h (one-, two- and three-digit speeds) and gears 3 through 8 plus `N`, recording the bounding-box `x` of the gear, the RPM bars and the DRS block on every sample.
+- Result: `span_gear_x: 0`, `span_bars_x: 0`, `span_drs_x: 0`. Each element was also constant in width for the whole run: `spdBoxWidths: [556.85]`, `gearBoxWidths: [222.73]`, `rpmBarWidths: [569.07]`. Before the gear box was added the equivalent measurement gave `span_bars_x: 28.91px`.
+- Re-ran the throwaway Node v22 harness at `C:/Users/mingfu/AppData/Local/Temp/f1mockcheck.mjs` (outside the repository): all five fetch branches still keep a valid track and pass.
+- Re-checked in Chromium against the local `python -m http.server` on 127.0.0.1:8899: all 22 self-check assertions pass both against the fallback geometry and after the real Marina Bay path loads (5042 units). Zero console errors.
+- Visually confirmed at a true 1440x900 via `Emulation.setDeviceMetricsOverride` (`shift-fixed.png`, `shift-fixed2.png`).
+
+Known limitations, recorded rather than hidden:
+- The same root cause is present in the lap panel: `.times .t` also carries `tabular-nums` (a no-op here), so the lap-time digits change width and the small delta span beside `#tLast` shifts horizontally as the time changes. It is far less visible than the gear was, because each value sits in its own fixed-width grid cell so nothing else in the panel moves, and because `#tBest`/`#tLast` are already padded with dashes. Not fixed — it was not what was reported.
+- The reserved boxes are sized for the ranges this mock produces (speed up to 320 km/h, gears 1-8 plus `N`). A value outside those grows its box rather than clipping, which would reintroduce a smaller shift.
+- The browser verification origin was `127.0.0.1:8899`, not the Pi's Flask origin on 8080, and was not tested on the Pi.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No existing project file was modified other than `web/static/mock-driver.html`.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point that git cannot follow, so `git status` reports "not a git repository". This is pre-existing and was left untouched.
+
+Scratch files added during this verification, left in place after an earlier cleanup command was declined:
+- `shift-fixed.png` and `shift-fixed2.png` in the repository root. My own screenshots, not project files. Safe to delete.
+
+## 2026-09-10 (Windows working copy) — speedometer panel rebuilt as a minimal instrument cluster
+
+Action:
+- Replaced the speedometer panel's "row of widgets" layout in `web/static/mock-driver.html` with a centred instrument cluster in the modern-EV idiom: one large light-weight numeral, a hairline rule, the gear, and three hairline gauge tracks.
+- Chosen by the user from three offered directions (sweeping tach arc / segment LED cluster / minimal EV cluster); minimal EV was picked, with throttle and brake as the only extra readouts. DRS, shift lights and steering angle were offered as extras and not selected.
+
+Files changed:
+- `web/static/mock-driver.html` (only file changed)
+
+Previous state:
+- `.head` was a horizontal flex row spanning the full panel width: a `Speed` label over the numeral plus `km/h`, a `Gear` label over the numeral, an RPM bar and a speed bar stacked in a `.bars` block, and a DRS pill with a round LED pinned to the right by `margin-left:auto`.
+- The RPM bar was a 12-34px tall rounded block with a green-amber-red gradient; the speed bar was a solid white block of the same height.
+- All numerals used `font-weight:700`.
+
+New state:
+- `.head` is now a centred column: `display:flex;flex-direction:column;align-items:center;justify-content:center`. Inside it a `.cluster` capped at `min(1120px,88%)` holds a `.readout` row and a `.gauges` column, so the panel is mostly negative space. That emptiness is the design, not an oversight.
+- `.readout` holds speed, `km/h`, a 1px vertical rule and the gear on a shared baseline. The rule uses `align-self:stretch`, so it spans the full height of the numeral (measured 204px), which is what makes it read as a cluster divider rather than a stray tick.
+- Both numerals dropped from `font-weight:700` to `font-weight:400`. The bundled face ships only 400 and 700 (see the `@font-face` rules), so 400 is the thinnest available and is what gives the light modern-cluster look.
+- `.gauges` is three hairline tracks with right-aligned labels: RPM, THR, BRK. RPM is 3px and white; throttle and brake are 2px and coloured green and red. RPM turns red above 13000 rpm via a `hot` class toggled in `render()`. No gradients, no glows, no arcs, no tick marks.
+- Removed: the `Speed` and `Gear` text labels, the speed bar (`#spdbar`), and the entire DRS indicator — markup, its four CSS rules, and the `drsOn` computation in `render()`.
+- Removed CSS: `.bars`, `.bar`, `.bar.rpm`, `.bar.spd`, `.drs`, `.drs .led`, `.drs.on .led`, `.drs.on .txt`, `.head .speed .val`, `.head .speed .lbl`, `.head .speed .unit`, `.gear`, `.gear .val`. All were replaced, not disabled.
+
+Regression found and fixed during verification:
+- Moving the gear from `font-weight:700` to `400` invalidated its reserved box. `1.2ch` had been calibrated against the bold face; at 400 the `ch` (width of "0") is 70.38px while `N` is 85.34px, a ratio of 1.213, so `1.2ch` = 84.46px fell 0.88px short of `N`. The centred readout row shifted 0.45px whenever the gear changed between `1` and `N`/`8`.
+- Fixed by widening the gear box to `1.25ch` (87.96px) and correcting the comment, which had quoted the old bold-face figures. This is why the comment now records the measured `ch` at both sizes rather than a single number.
+
+Verification:
+- Measured the actual glyph advances with a canvas 2D context at the rendered font (`400 88px Formula1`) rather than assuming: `0`=70.38, `1`=55.17, `2`=64.02, `3`=62.39, `4`=70.13, `5`=62.82, `6`=65.36, `7`=60.89, `8`=66.26, `9`=65.36, `N`=85.34. At the speed's 240px the same `0` measures 191.95px, confirming `3ch` (575.85px) exactly covers any three-digit speed.
+- Forced all 12 combinations of speed `0`/`7`/`98`/`316` against gear `N`/`1`/`8` and read the boxes back synchronously: `gearBox` is a single value `[1115.63, 87.96]`, `spdBox` is a single value `[396.4, 575.83]`, and the `km/h` label and rule shift by 0px. Before the `1.25ch` fix the gear box took two distinct widths (84.44 / 85.34).
+- Sampled the live page over 27 frames covering 98-316 km/h and gears 3-8: `span_x` was 0 for every element in the cluster (speed, unit, rule, gear, and all three bar fills). The bar fills vary in width while their left edge stays put, which is correct.
+- Confirmed the computed styles: RPM track 3px, THR and BRK tracks 2px; fills white / `rgb(34,255,8)` / `rgb(255,30,0)`; the `hot` class flips RPM to `rgb(255,30,0)` and back cleanly.
+- Re-ran the throwaway Node v22 harness at `C:/Users/mingfu/AppData/Local/Temp/f1mockcheck.mjs` (outside the repository): all five fetch branches keep a valid track and all 22 self-check assertions pass in every branch.
+- Chromium against the local `python -m http.server` on 127.0.0.1:8899: zero console errors and zero warnings. The upper panel is 51.4% of viewport height, so the 2x2 arrangement the user asked for is intact, and the document does not overflow in either axis.
+- Grepped for orphaned references after the removals: no `drs`, `spdbar`, `.bars`, `.bar`, `.speed` or `.gear` selector remains. `--yellow` is still used by `.mockbadge`.
+
+Known limitations, recorded rather than hidden:
+- The DRS indicator is gone, not hidden. It was offered as an optional extra and not selected. Restoring it means re-adding the markup, the LED CSS and the `drsOn` line in `render()` — the underlying values (`s.throttle`, `s.spd`) are still computed, so nothing upstream was lost.
+- Throttle and brake are drawn green and red, which is the F1 telemetry convention but is also the only colour in the cluster. A fully monochrome version would be a two-line change to `#thrbar` and `#brkbar`.
+- The RPM track is scaled against 15000 while `sample()` produces 9000-15000, so the bar never falls below about 60%. That is physically right for this engine's idle but means the bar does not sweep its full width.
+- One- and two-digit speeds are right-aligned inside the reserved 3ch box, so short numbers sit to the right of the panel's centre line. The box itself never moves; only the digits within it. This is deliberate — it keeps the numeral hard against `km/h` — but it does mean a reading of `7` is not optically centred under the gauges.
+- `.times .t` in the lap panel still carries a `tabular-nums` that is a no-op for this font, so the delta beside `#tLast` shifts as the time changes. Pre-existing, and not what was reported either time.
+- Verification was against `127.0.0.1:8899`, not the Pi's Flask origin on 8080, and was not tested on the Pi.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No existing project file was modified other than `web/static/mock-driver.html`.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point that git cannot follow, so `git status` reports "not a git repository". This is pre-existing and was left untouched.
+
+Scratch files added during this verification, left in place after an earlier cleanup command was declined:
+- `cluster.png` in the repository root. My own screenshot, not a project file. Safe to delete.
+
+## 2026-09-10 (Windows working copy) — circuit map: start/finish marker, three coloured sectors, labels
+
+Action:
+- Added a start/finish marker, a three-colour sector overlay and per-sector labels to the circuit map in `web/static/mock-driver.html`, in answer to "within the circuit, can you add the starting point and highlight the 3 sections in 3 different colours and label them?".
+
+Files changed:
+- `web/static/mock-driver.html` (only file changed)
+
+Previous state:
+- The map drew one white path (`#circuit`) with a moving car dot and nothing else. No start marker, no sector colouring, no labels.
+
+New state:
+- Markup, inside the map `<svg>` after `#circuit`: three sibling `<path class="secpath">` (S1/S2/S3), a `<line id="startline">`, and a `<g id="maplabels">` holding `<text class="seclbl">` for S1, S2, S3 and START.
+- Sectors are painted by dash maths, not by splitting the path. This was the deliberate choice: the shape arrives from the API as one `d` string at runtime, and splitting it would mean parsing and re-emitting geometry the API already got right. For a lap of total length L and a segment [a, a+len], `stroke-dasharray: len L` with `stroke-dashoffset: -a` paints exactly that span. So each sector path gets the same `d` as `#circuit`, and only the dash attributes differ.
+- Sector colours: cyan `#21ffff` (S1), yellow `#ffff1b` (S2), purple `#f700fa` (S3). Green, red and purple already carry meanings in the lap panel (`.up` faster, `.down` slower, `.best`), so green and red were avoided; cyan was previously unused anywhere on the page.
+- Labels are haloed with `paint-order:stroke` under a `--bg`-coloured stroke so they stay legible where they sit on a coloured line. Sized as a fraction of the shape (`k = max(bbox width, height)`), so they scale with the circuit rather than being pinned to a pixel size.
+- The start/finish bar is a `<line>` centred on the start point and stood across the road, oriented by a unit tangent derived by differencing `getPointAtLength` at +/-1 unit.
+
+Why the START label needed a search rather than an offset:
+- The first cut parked the label outward from the shape's centre by `k*0.10`. On Marina Bay the start point sits 11.4 units inside the bbox right edge while the viewBox pad out there is 86.6, so the anchor landed 46 units past the viewBox and the centred text ran another ~130 past that. The screenshot showed "STAR" — the T was clipped off the panel.
+- Clamping the anchor into the viewBox fixed the clipping but created a worse defect: with `text-anchor:end` on the right half, the text grew leftward directly across the bar it names. Measured label box 601.6..688.3 x 215.3..241.9 against bar box 654.8..681.1 x 231..234.3 — the label contained the bar.
+- Root cause of both: the correct direction is a property of the shape, and the shape is not knowable until the API answers. Marina Bay's start is walled in — cyan above, magenta below, bar across the road, 27 units of gap to the right — so no fixed offset works. Replaced the heuristic with a measured search: eight directions around the bar tip, each candidate text box tested against the panel and scored by its minimum distance to the sampled road, best score wins. Falls back to a clamped outward nudge if no direction fits the panel.
+- Text width is estimated as `characters * fontSize * 0.8` because this face's metrics are wide (`0` is .80em, `N` is .97em). It is an estimate, and the self-check is what makes that safe to ship — it asserts the anchor landed inside the viewBox.
+
+Verification (numeric measurement via `getBoundingClientRect` on the live page at `127.0.0.1:8899`, real Singapore shape pulled from the API):
+- Sectors tile the lap exactly: `dasharray` `"1680.69 5042.07"` on all three, `dashoffset` `0.00` / `-1680.69` / `-3361.38`, `circuitLen` 5042.1 units, `seg` = 5042.07/3 = 1680.69. No gap, no overlap.
+- Start bar: box 654.8..681.1 x 231..234.3 CSS px, midpoint on the start point, upright across the road, drawn on top at the cyan/magenta boundary. Confirmed visually by temporarily injecting a loud `#startline{stroke:#00ff00 !important;stroke-width:70px !important}` probe (using `!important` because a CSS declaration beats an SVG presentation attribute) — the green probe landed exactly on the boundary. The injected style was dropped by reloading.
+- Bar was raised from `road*0.8 x road*0.45` to `road*0.95 x road*0.6` because at the original size it rendered 26x7 CSS px, too easy to miss for the one marker that matters most.
+- START label after the rewrite: box 552.9..639.6 x 213.6..240.3, `text-anchor` `end`, inside the panel, 15.2px clear of the bar, 20.6px clear of the nearest point on the road (measured by sampling 720 points along the live path).
+- `text-anchor:middle` was REMOVED from the `.seclbl` CSS rule and each label now sets its own anchor as an attribute. A CSS declaration beats a presentation attribute, so leaving it in the rule would have silently overridden the START label's per-side choice. The three sector labels set `middle` explicitly to compensate.
+
+Self-checks: 24 -> 25. The new check, `START label anchor lands inside the viewBox`, is tested against the viewBox edge itself rather than an invented margin — an earlier version used the road width as a margin and failed on the harness's square, where the anchor legitimately sits on the bbox boundary. Tested at margin 0 it still catches the defect that started this: the original broken anchor was at x=860 against a viewBox right edge of 814.
+- `node C:\Users\mingfu\AppData\Local\Temp\f1mockcheck.mjs` — 25 checks, ALL PASS, in all five branches (offline, real payload, non-path payload, unmeasurable path, HTTP 500). Harness lives in Temp on purpose; it is not a repo file.
+
+Known limitations, recorded rather than hidden:
+- The text width estimate (`chars * fontSize * 0.8`) is an approximation of this font's metrics, not a measurement. It is used only to score candidate positions; the self-check asserts the chosen anchor is inside the panel, so a bad estimate degrades placement rather than clipping.
+- The search samples the road at 90 points. On a shape with a very tight feature between two samples, a candidate could score as clear when a hair of road passes through it. 90 points on a 5042-unit lap is one sample per 56 units against a road 35 units wide, so this is not reachable on the current shapes; noted rather than fixed.
+- The START label can end up in a direction that is not the visually obvious one when several candidates tie, since ties are broken by iteration order (the eight directions in increasing angle). No assertion covers aesthetics.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No existing project file was modified other than `web/static/mock-driver.html`.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point that git cannot follow, so `git status` reports "not a git repository". This is pre-existing and was left untouched.
+
+Scratch files added during this verification, left in place after an earlier cleanup command was declined. All are my own screenshots, none are project files, all safe to delete:
+- `sectors-before.png`, `sectors-after.png`, `map-zoom.png`, `map-bar-probe.png`, `map-final.png`, `start-closeup.png`, `start-final.png` in the repository root.
+
+## 2026-09-10 (Windows working copy) — circuit map now paints the real Singapore shape on first frame
+
+Action:
+- Reported: "when i refresh the page, the circuit does not show the singapore map. it only loads after a few seconds. can we make it such that it loads the singapore map immediately". Replaced the hand-drawn fallback path in `web/static/mock-driver.html` with the exact path the API serves, so the correct circuit is present at first paint and the API response no longer gates what is displayed.
+
+Files changed:
+- `web/static/mock-driver.html` (only file changed)
+
+Previous state:
+- `if (canPath) { setTrack(TRACK_D); fetch(TRACK_API)... }` painted `TRACK_D` — a hand-drawn Marina Bay stand-in of ~13 corners, ~300 chars — and then replaced it once the gateway answered. `TRACK_D` carried a comment describing it as "the degraded case" whose corners "do not line up one-for-one with the 19 in CORNERS above".
+- `TRACK_API` is `https://apigw.withoracle.cloud/livelaps/trackmap/Singapore/2022`, an internet round trip, not a local one.
+
+Root cause:
+- The delay is the network, and the wrong shape is what the page chose to paint while waiting. Measured API latency from the page: 795 ms and 1090 ms on two warm calls, plus DNS and TLS setup on a cold load — the "few seconds" reported. Every refresh opened on a sketch of the circuit and then jumped to the real one.
+- The swap was also avoidable entirely: the path the API returns was measured byte-identical to what the page ends up holding (`same: true`), so a first paint using that same string produces a second render with nothing to change.
+
+New state:
+- `TRACK_D` is now the exact 12,467-character string the API serves for Singapore/2022, wrapped as 138 concatenated source lines. It is `const`, so there is no change to the fetch, to `setTrack`, or to any positioning code — the fallback that already existed simply now holds the real geometry. The comment above it was rewritten to say where the data comes from and how to regenerate it.
+- Consequences: correct on first paint, on hard refresh, in a fresh browser profile, and with the gateway unreachable. The offline Pi case now draws the true circuit instead of an approximation that did not line up with the corner table.
+- Cost: ~13.4 KB added to the file, now 48,813 bytes. It is data, not logic. The alternative considered and rejected was a `localStorage` cache, which would have added a state path and still shown the wrong shape on a first visit or a cleared profile.
+
+Defect found in my own first splice, and how it was caught:
+- The first bake packed tokens as `'a b c' + 'd e f'`, which concatenates to `a b cd e f` — the space at each line boundary was dropped, 137 of them, one per join. Fused numbers merge into a single corrupt coordinate, so the shape still began correctly and looked plausible; it was the measurement that exposed it (`earlyLen` 12330 against the API's 12467, short by exactly the number of line joins).
+- Fixed by giving every non-final line a trailing space inside its quotes, so plain concatenation is exact.
+- The first attempt passed its own check because the check recomputed what the string should be (`lines.join(' ')`) rather than inspecting what was emitted. The check now evaluates the emitted literal with `new Function` and compares that — both before writing and again after re-reading the file from disk. This is the second time this session that a check which re-derived the expected value instead of reading the actual one nearly shipped a defect.
+
+Verification (live page at 127.0.0.1:8899):
+- With every request to `apigw.withoracle.cloud` aborted at the browser: `#circuit` already carried the 12,467-character shape, `getTotalLength()` 5042.1 units, 3 sector paths with dasharray `1680.69 5042.07` and offsets `0.00 / -1680.69 / -3361.38`, all present 65 ms after navigation and unchanged 2 s later.
+- With the API live: every derived attribute byte-identical before and after the response landed — path length, `stroke-width` 34.6, all three dash pairs, the start bar's `x1,y1,x2,y2,stroke-width` (`683.42,67.56,748.68,59.30,20.8`), the START label's `x,y,text-anchor,font-size` (`644.78,63.43,end,54.8`) and the viewBox. The swap is a no-op, so there is no jump to see.
+- Self-checks 25, ALL PASS, in all five harness branches: `node C:\Users\mingfu\AppData\Local\Temp\f1mockcheck.mjs`.
+- Visual: the map now shows the recognisable Marina Bay layout with cyan S1, yellow S2, purple S3, the white start bar and the car dot.
+
+Transport note, recorded because it will recur on this machine:
+- `node` cannot reach the gateway from this network: `SELF_SIGNED_CERT_IN_CHAIN`, because the corporate TLS-inspecting proxy's root is in the Windows store and not in node's CA bundle.
+- Windows PowerShell 5.1 cannot either: it defaults to TLS 1.0 and the gateway refuses it. Setting `[Net.ServicePointManager]::SecurityProtocol = Tls12` did not resolve it either; the failure then surfaced as "the underlying connection was closed", the proxy again.
+- Chromium reaches it fine, so the path was captured by having the page POST it to a one-shot local listener. TLS certificate validation was NOT disabled, weakened, or bypassed anywhere, in PowerShell or otherwise — node's and PowerShell's default trust settings were left exactly as they were, and the request simply did not succeed there.
+
+Known limitations, recorded rather than hidden:
+- The baked path is a snapshot. If the Pi's `TRACK_API` ever serves different geometry for Singapore/2022, the first paint will show this snapshot and then swap to the live shape — the same brief mismatch as before, just in the other direction. Regenerating means re-running the bake, not hand-editing the literal.
+- Pre-existing and NOT changed by this entry: with the gateway unreachable the track name reads "Marina Bay" (the static markup) and with it reachable it reads "Singapore" (the API's `TRACK_DETAIL.TRACK`), so the same circuit is labelled two ways depending on connectivity. Left alone as out of scope for this request.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No TLS certificate validation disabled or bypassed in any tool.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No existing project file was modified other than `web/static/mock-driver.html`.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point that git cannot follow, so `git status` reports "not a git repository". This is pre-existing and was left untouched.
+
+Scratch files, none of them project files, all safe to delete:
+- `map-baked.png` in the repository root (screenshot).
+- In `%TEMP%`: `f1bake.mjs` (first splice, superseded), `f1bake2.mjs` (corrected splice), `tracksink.mjs` (one-shot local POST listener), `track.txt` (the captured path), plus the earlier `f1mockcheck.mjs` harness which is still in use.
+
+================================================================================
+Turn numbers on the circuit map, and the label collisions that followed
+================================================================================
+
+File changed: web/static/mock-driver.html  (the only project file touched)
+
+Request: "within this image, there are numbers within the sectors, can you label
+them on the circuit as well, there is no need to label the DRS Detection zone and
+speed trap" — with the official F1 Singapore circuit map as the reference. The
+DRS Detection Zone and Speed Trap boxes in that image were deliberately NOT
+reproduced.
+
+Where the numbers come from — no image analysis was needed:
+- The trackmap endpoint already returns them. `https://apigw.withoracle.cloud/livelaps/trackmap/Singapore/2022`
+  carries a `TURNDATA` array, one object per corner with `TURN`, `APEX_X1`, `APEX_Y1`,
+  `CX1`, `CX2`, `CY1`, `CY2`. This was found by grepping the repo for other consumers of
+  the gateway, which turned up `web/static/js/trackmap_svg.js` — the production LiveLaps
+  page, which already renders exactly this (lines 109-124, circles at `APEX_X1`/`APEX_Y1`
+  with the turn number inside). No OCR, no disc detection, no corner detection.
+- Only `APEX_X1`/`APEX_Y1` are used. The `CX*`/`CY*` fields have inconsistent signs
+  relative to the apex and are unused by the production app too.
+- Verified before use: projecting all 23 apexes onto the parsed `TRACK_D` polyline put
+  every one within 0.2-10.6 units of the centreline, well inside the ~12-unit road
+  half-width, so they need no projection. Their lap fractions rise monotonically
+  (T1 8.5% ... T23 98.0%), which independently confirms the API's `TURN` order follows
+  the direction of travel along `TRACK_SVG`.
+- Baked as `TURN_D` next to `TRACK_D` for the same reason `TRACK_D` is baked: the numbers
+  paint on the first frame instead of waiting on the fetch. Swapped for the fetched
+  `TURNDATA` when it arrives, exactly as the path is.
+
+Transport note: the payload was captured through Chromium, the only TLS-capable client on
+this network. Certificate validation was NOT disabled or weakened anywhere.
+
+The defect found after the first implementation, and why the obvious fix was wrong:
+- Sitting each number on its apex put three of them under something. Measured, not
+  guessed: S2/T10 gap 0.0, S3/T18 gap 0.0 (S3 fully covered the number — confirmed in a 6x
+  crop), S3/T17 and S3/T19 11.4-11.7 units (their halos touched), and T8/T14 0.5 units
+  where the track doubles back past itself. Note S2 sits at lap 50.0% and T10 at 51.0%,
+  which is why the first zoom I looked at showed only the T18 collision.
+- First attempt: offer each NUMBER three positions — its apex and one standoff to either
+  side — scoring against the road and the labels. This FAILED, and the browser self-check
+  caught it: "FAIL turn numbers clear the sector labels, closest 0 units (T18/S3)". The
+  number is 43 units tall and the label it collides with is 142 by 89, so no standoff
+  short of leaving the corner gets out from under it. The responsibility was backwards.
+- Working fix: leave the 23 numbers where the request put them — on their corners, at the
+  payload's own apexes — and move the 3 sector labels instead. They are large, there are
+  few of them, and each names a third of a lap, so being stood off the road costs nothing.
+  Each is now walked out from its arc-length midpoint in eight directions plus "stay put",
+  keeping whichever spot clears the road and every turn number by the most. The midpoint
+  is among the candidates, so a label with room does not move, and it is also the fallback
+  when every candidate leaves the shape. Same shape of search the START label already used.
+- The START label's own search now also treats the turn numbers as blockers. Its road
+  sampling was replaced by the shared `boxRoadGap` helper with the same 90 samples in the
+  same positions, so its chosen anchor is unchanged.
+- `nearestLen` (written for the abandoned per-number offset) was deleted rather than left
+  unused.
+
+Harness note worth recording: `f1mockcheck.mjs` ran ALL PASS while the real page was
+FAILING. Its stub path is a 100x100 square while `TURN_D` holds Singapore coordinates
+hundreds of units wide, so the turn numbers sit far outside the stub geometry and every
+clearance is trivially satisfied. The harness proves the plumbing does not throw; it does
+not exercise the placement. The real check has to run in a browser against the real path.
+
+New self-check assertion: "turn numbers clear the sector labels, closest N units",
+which rebuilds each label's box from its own attributes and requires a positive gap to
+every sector label. It is the assertion that caught the failed first attempt.
+
+Verification:
+- Real geometry, browser at 127.0.0.1:8899/mock-driver.html?selfcheck=1 — 26 checks,
+  ALL PASS, closest turn/sector gap 46 units (T10/S2), was 0.
+- Harness, all five branches (offline / online / garbage / throws / http500) ALL PASS,
+  23 turn numbers each: `node C:\Users\mingfu\AppData\Local\Temp\f1mockcheck.mjs`.
+- Visual at 1600x900: numbers 1-23 all present and legible in travel order. Turn 18 is
+  now visible where it was fully covered. T8/T14 remain the tightest pair at 48 units
+  apart with slightly overlapping halos, both still legible — these are two genuinely
+  adjacent corners on this layout, where the track doubles back.
+
+Layout difference worth knowing, NOT a defect: the API only serves 2022. `/2023`, `/2024`
+and `/2025` all return `403 ORDS-13002`. Singapore/2022 is the 23-corner, 5.063 km layout;
+the current circuit is 19 corners and 4.928 km. Measured against the reference image,
+turns 1-15 sit in the same places, our 16-19 are the chicane removed for 2023, and our
+20-23 occupy the road the reference image numbers 16-19. There is no clean renumbering
+onto 1..19, so 1..23 is the only correct labelling of the 23-corner shape actually drawn —
+and it matches what the production LiveLaps app renders.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No TLS certificate validation disabled or bypassed in any tool.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No project file modified other than `web/static/mock-driver.html`.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point git
+  cannot follow.
+
+Scratch files, none of them project files, all safe to delete:
+- In `%TEMP%`: `f1collide.mjs` (the label-collision measurement), `f1apex.mjs` (apex
+  projection + lap fractions), `turndata.json` (the captured TURNDATA payload, the source
+  for `TURN_D`), `probe5.html` + `sink5.mjs` (the capture pair), `turns-fixed.png` and
+  `zoom-t9.png` (verification screenshots, deliberately moved out of the repository root
+  rather than left there).
+
+================================================================================
+Request: "relocate the S1,S2,S3 text to be next to the circuit and not on the
+circuit as it is overlapping with the turns"
+================================================================================
+
+File changed: `web/static/mock-driver.html` (the only project file touched).
+
+Why the previous fix was not enough. The earlier change gave the sector labels a
+nine-candidate search: the midpoint plus eight directions at a reach of k*0.085 (123
+units). Two things made that insufficient, both measured before anything was edited.
+
+1. The reach was shorter than the problem. The label box is 143x89 units and a turn number
+   is 43 tall, so a label needs to clear the centreline by (89+43)/2 = 66 units to be
+   reliably off both the tarmac and the numbers. Measured, the old search's chosen spots
+   cleared by 34, 21 and 59 units - still on the racing line. Legal spots exist but the
+   nearest ones start 135-200 units out, past the 123-unit cap.
+2. The midpoint is an arbitrary place to stand. A sector is 1667 units of road and the
+   label sat opposite whatever the halfway point happened to be. Stepping straight out
+   along the road normal from S2's midpoint needs 350 units to find air, because the lap
+   doubles back there; S1's own normal never becomes legal at all.
+
+The panel was also too tight, so `pad` went from k*0.06 to k*0.10 - a 144x89 label cannot
+sit outside a shape whose margin is 87 units.
+
+Previous state (sector label block in setTrack):
+    const sfs = k * 0.062, sreach = k * 0.085;
+    for (let i = 0; i < 3; i++) { ... 9 candidates around the midpoint, bounded to the raw
+    bbox, fallback = the midpoint itself ... }
+
+New state:
+- `lapPts` - the lap sampled once per setTrack into 270 points (one every 19 units against
+  a 35-unit-wide road). `boxRoadGap(box, n)` now reads this array at a stride instead of
+  calling `circuit.getPointAtLength` per sample. Not a micro-optimisation: the new search
+  evaluates a few thousand candidate boxes per label and `getPointAtLength` is a real
+  geometry query, so leaving it in would have meant roughly a million calls per page load.
+  The stride is chosen so n=90 lands on the same positions the START search used before,
+  leaving that label's chosen anchor unchanged.
+- The sector search now SLIDES the label along its own sector: 8 anchors spanning 15%-85%
+  of the sector, the road normal at each (via the existing `tangentAt`), a +/-40 degree fan
+  around that normal in 20-degree steps, both sides of the road, and a distance sweep from
+  k*0.04 to k*0.28 in k*0.010 steps.
+- Scoring: min of (road clearance, gap to each of the 23 turn boxes, gap to each
+  already-placed sector label). The NEAREST candidate clearing everything by k*0.050 wins,
+  ties broken on clearance. Nearest rather than roomiest, because a sector label that has
+  wandered across the map stops naming anything.
+- Candidates must lie inside the padded panel (bbox +/- pad, inset k*0.012) rather than the
+  raw bbox as before - past that edge the label is outside the viewBox and clipped.
+- The fallback is now the roomiest candidate found rather than the midpoint, so a shape
+  with nowhere legal gets a cramped label instead of an overlapped one. Only a panel too
+  small for any candidate at all leaves the label at the midpoint.
+- `const w` in the sector block was renamed `sw`: the START label block below declares its
+  own `const w` in the same function scope, so the old name would have thrown a
+  SyntaxError on redeclaration.
+
+Self-check changes:
+- "sector labels sit on the map" is REPLACED by "sector labels fit inside the panel". The
+  old assertion required each label anchor to lie inside the path's own bbox, which is now
+  exactly backwards - the labels are placed off the circuit deliberately. The new one tests
+  the whole text box against the viewBox, which is what actually causes clipping.
+- NEW "sector labels stand off the road, closest N units", floor k*0.04. Nothing else
+  caught the original complaint: a label parked between two numbers is clear of both and
+  still sitting on the tarmac. Measures 82 units (S1); the search achieves k*0.050 = 72 or
+  better, so the floor has headroom and still fails loudly if placement regresses.
+- The overlap assertion now covers sector-vs-sector as well as turn-vs-sector, since the
+  labels are placed by a search that only sees those already down and a bad ordering could
+  stack two. Reworded to "labels stay clear of each other, closest N units".
+- `lblBox` and `bGap` hoisted above the placement assertions; the later duplicate
+  declarations were removed, as was a second `const vb`.
+
+Independent check that the labels really are off the circuit, not merely off the road:
+`circuit.isPointInFill()` on each label anchor and all four text-box corners, queried in
+the browser against the live path (closed, 5042 units). All five points of all three
+labels return false, so every label sits outside the track's own filled region. This had
+to be asked in the browser: the scratch simulations build their polygon from `TRACK_D`,
+which measures 5216 units against the real path's 5042, so their inside/outside answer
+near a boundary is not trustworthy.
+
+Verification:
+- Real geometry, browser at 127.0.0.1:8899/mock-driver.html?selfcheck=1 - 29 checks, 0
+  FAIL, 58 PASS across the two runs (baked then fetched).
+  "sector labels stand off the road, closest 82 units (S1)"
+  "labels stay clear of each other, closest 74 units (T9/S2)"
+  "sector labels fit inside the panel"
+  "23 turn numbers placed"
+- Harness, all five branches (offline / online / garbage / throws / http500) ALL PASS, 23
+  turn numbers each: `node C:\Users\mingfu\AppData\Local\Temp\f1mockcheck.mjs`. The standing
+  caveat still applies: that harness proves the plumbing does not throw, it does NOT
+  exercise placement. Its stub path is a 100x100 square, so it reported "closest 6 units"
+  for a check that measures 82 on the real shape. Only the browser run means anything for
+  geometry.
+- Visual at 1600x900 and at map zoom: S2 clear above turns 7/8/9, S1 in the bay between the
+  T5-T6 straight and the start/finish, S3 below turns 18 and 21/22. All three on black
+  background, no road and no number touched, each still beside its own sector's colour band.
+
+Commands intentionally not run:
+- No package installs, removals, or upgrades.
+- No `sudo`, `systemctl`, or service commands.
+- No RabbitMQ commands.
+- No Oracle DB connections.
+- No wallet setup or update commands.
+- No TLS certificate validation disabled or bypassed in any tool.
+- No changes to `f1store.yaml`, `f1env.sh`, `.f1sim_secret`, `.ssh/`, or any wallet file.
+- No project file modified other than `web/static/mock-driver.html`.
+- No git commit or diff: `.git` in this working copy is a OneDrive reparse point git cannot
+  follow.
+
+Scratch files, none of them project files, all safe to delete:
+- In `%TEMP%`: `f1outside.mjs` (angular sweep - this is what established that legal spots
+  start 135-200 units out), `f1outside2.mjs` (fixed normal + fan vs the angular sweep; it
+  cannot collapse to one dimension because S1's exact normal never becomes legal),
+  `f1final.mjs` (the exact candidate set and threshold, simulated before any edit),
+  `f1slide.mjs` (adds the sliding anchor and label-vs-label blocking; the threshold sweep
+  that chose k*0.050 was run with this), `f1s1side.mjs` (inside/outside split, which showed
+  the search never picks an infield spot on this shape), and `f1scrap/` containing
+  `sectors-outside.png` and `map-zoom.png`, this change's verification screenshots,
+  deliberately moved out of the repository root rather than left there.
+
+Known limitation, deliberately not addressed: on a shape where nothing is legal the search
+falls back to the roomiest spot it found, which could still be on the road. Singapore has
+legal spots along all three sectors, so this only bites on a track whose panel is far
+tighter than its geometry - and the "stand off the road" assertion would fail loudly there
+rather than passing silently.
+
+---
+[2026-10-13] File: .gitignore (created)
+Reason: user wants to push to GitHub without leaking sensitive data.
+Previous: file did not exist.
+Now: ignores .f1sim_secret, .ssh/, f1store.yaml, f1env.sh, Wallet_f1simdb/, newWallet_f1simdb/, wallet zips, key/cert files, .env*, instantclient dir+zip, web/instance/ and *.db, *.log, dev/ venv, __pycache__, .playwright-mcp/, .claude/, .codex/, .agents/.
+Verified: none (git status not run; repo state unchecked). Not run: git add/commit/push.
+Rollback: delete .gitignore.

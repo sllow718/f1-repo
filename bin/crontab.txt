@@ -1,0 +1,3 @@
+* * * * * /home/pi/Desktop/rdm-device-v1_0_0-31/bin/check_device.sh
+# */5 * * * * /home/pi/Desktop/rdm-device-v1_0_0-31/bin/clean_device.sh
+* * * * * /home/pi/Desktop/f1-v6/bin/healthcheck.sh

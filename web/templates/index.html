@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<h2 id="title">F1 Simulator</h2>
+<div class="fluid-container">
+    {% if current_user.is_authenticated %}
+    <div class="d-grid gap-2">&nbsp;</div>
+    <div class="row">
+      <div class="col-md-6">
+        Welcome {{ current_user.username }} <br/>
+      </div>
+    </div>
+    <div class="d-grid gap-2">&nbsp;</div>
+    <div class="row">
+      <div class="col-md-6">
+        <button type="button" class="btn btn-block btn-primary mb-3" onClick="parent.location='{{url_for('user_admin')}}'">Update Profile</button>&nbsp;
+        <button type="button" class="btn btn-block btn-primary mb-3" onClick="parent.location='/user/otp'">Register OTP</button>&nbsp;
+        <button type="button" class="btn btn-block btn-primary mb-3" onClick="parent.location='{{url_for('logout')}}'">Logout</button>
+      </div>
+    </div>
+    {% else %}
+    <div class="d-grid gap-2">&nbsp;</div>
+    <div class="row">
+      <div class="col-md-6">
+        <button type="button" class="btn btn-block btn-primary mb-3" onClick="parent.location='{{url_for('login')}}'">Login</button>
+      </div>
+    </div>
+    {% endif %}
+    <div class="row">
+      <div class="col-md-6">
+        <div>Gamehost: <span class="txt-gry">{{ ghost }}</span></div>
+        <div>Device: <span class="txt-gry">{{ dname }}</span></div>
+        <div>Telemetry Target: <span class="txt-gry">{{ ipaddr }}</span></div>
+      </div>
+    </div>
+</div>
+{% endblock %}
+

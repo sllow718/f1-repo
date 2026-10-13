@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content%}
+<div class="container">
+    <div class="row">
+        <div class="col-md-6 card">
+            <div class="card-body">
+                <div class="form-group">
+                    <img src='data:image/png;base64,{{ qrcode_imgb64 }}' class="card-img-top"></img>
+                </div>
+                <div class="form-group">
+                    <button type="button" class="btn btn-block btn-primary mb-3" onClick="parent.location='/user/cancel'">Cancel</button>&nbsp;
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
